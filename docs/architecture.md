@@ -33,13 +33,18 @@ public/                 # Final generated HTML output
 
 ## 3. Core Data Models
 
-### Implementation Note: Standard Library vs Pydantic
-Configuration models use Python's standard library `dataclasses` rather than Pydantic. This decision prioritizes:
-- **Zero additional dependencies** - Pydantic adds a heavy dependency tree
-- **Sufficient validation** - Manual validation in `ConfigLoader.load()` catches configuration errors at startup
-- **Test coverage** - 22 tests in `test_config.py` validate parsing, defaults, and error handling
+### Implementation Note: Pydantic for All Models
+All configuration and data models use Pydantic `BaseModel` for consistent validation and serialization:
+- **`models.py`**: `DomainConfig`, `Result`, `ExpectConfig` - Core data models with validation
+- **`config.py`**: `DashboardConfig`, `StorageConfig` - Settings models with field descriptions
 
-If stricter runtime validation becomes necessary, migration to Pydantic is straightforward but would require updating error type expectations in tests (Pydantic raises `ValidationError` vs current `ValueError`).
+Benefits:
+- **Automatic validation** - `Field(ge=, le=, ...)` constraints catch errors at instantiation
+- **Type safety** - Runtime type checking with clear error messages
+- **Serialization** - Easy model export to dict/JSON when needed
+- **Documentation** - Field descriptions serve as inline API docs
+
+Error handling uses `pydantic.ValidationError` for model validation issues. Other errors (missing config file, duplicate IDs) continue to use standard exceptions.
 
 ### ConfigLoader Settings
 - **rotation_interval_seconds**: How long to keep data in `data/live/` before archiving (default: 86400 = 24 hours). Shorter intervals (e.g., 4 hours) available for high-volume scenarios.

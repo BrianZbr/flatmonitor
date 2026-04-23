@@ -10,8 +10,8 @@ from typing import Dict, List
 from pathlib import Path
 
 from app.models import DomainConfig, ExpectConfig, ExpectedBotProtection
-from dataclasses import dataclass, field
-from typing import Optional, List as ListType
+from pydantic import BaseModel, Field
+from typing import Optional, List as ListType, Dict
 import re
 
 
@@ -33,29 +33,27 @@ def expand_env_vars(value: str) -> str:
     return re.sub(r'\$\{([^}]+)\}', replacer, value)
 
 
-@dataclass
-class DashboardConfig:
+class DashboardConfig(BaseModel):
     """Dashboard customization settings."""
-    title: str = "FlatMonitor"
-    header_text: Optional[str] = None
-    announcement: Optional[str] = None
-    footer_links: ListType[Dict[str, str]] = field(default_factory=list)
-    sort_by: str = "yaml_order"  # Options: 'yaml_order', 'severity', 'alphabetical'
-    favicon: Optional[str] = None  # Filename in public/assets/
-    logo: Optional[str] = None  # Filename in public/assets/ (header logo image)
-    header_hint: Optional[str] = "Click any site title for detailed status and logs."
-    footer_explanation: Optional[str] = None  # Custom footer explanation text (None = use default)
-    instance_label: Optional[str] = None  # Optional label for this instance (e.g., "US-East Primary")
+    title: str = Field(default="FlatMonitor", description="Dashboard page title")
+    header_text: Optional[str] = Field(default=None, description="Optional subtitle/description")
+    announcement: Optional[str] = Field(default=None, description="Optional banner announcement")
+    footer_links: ListType[Dict[str, str]] = Field(default_factory=list, description="Footer link array")
+    sort_by: str = Field(default="yaml_order", description="Display order: 'yaml_order', 'severity', or 'alphabetical'")
+    favicon: Optional[str] = Field(default=None, description="Favicon filename in public/assets/")
+    logo: Optional[str] = Field(default=None, description="Logo filename in public/assets/")
+    header_hint: Optional[str] = Field(default="Click any site title for detailed status and logs.", description="Hint shown above site grid")
+    footer_explanation: Optional[str] = Field(default=None, description="Custom HTML footer text")
+    instance_label: Optional[str] = Field(default=None, description="Instance label (e.g., 'US-East Primary')")
 
 
-@dataclass
-class StorageConfig:
+class StorageConfig(BaseModel):
     """Storage backend configuration."""
-    type: str = "filesystem"  # Options: 'filesystem', 'r2', 's3'
-    upload_logs: bool = True  # Upload log files to object storage (R2/S3)
-    filesystem: Dict = field(default_factory=lambda: {"output_dir": "public"})
-    r2: Optional[Dict] = None
-    s3: Optional[Dict] = None
+    type: str = Field(default="filesystem", description="Storage type: 'filesystem', 'r2', or 's3'")
+    upload_logs: bool = Field(default=True, description="Upload log files to object storage")
+    filesystem: Dict = Field(default_factory=lambda: {"output_dir": "public"}, description="Filesystem backend settings")
+    r2: Optional[Dict] = Field(default=None, description="R2 backend settings")
+    s3: Optional[Dict] = Field(default=None, description="S3 backend settings")
 
 
 class ConfigLoader:
