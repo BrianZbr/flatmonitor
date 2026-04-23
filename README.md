@@ -1,6 +1,6 @@
 # FlatMonitor
 
-A lightweight, high-performance HTTP monitoring tool that performs health checks and generates a static HTML dashboard.
+A lightweight HTTP monitoring tool that performs health checks and generates a static HTML dashboard.
 
 ## Features
 
