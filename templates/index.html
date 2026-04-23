@@ -13,7 +13,8 @@
     {% if header_text %}
     <p class="subtitle">{{ header_text }}</p>
     {% else %}
-    <p class="subtitle">Real-time synthetic monitoring status</p>
+    {# Default subtitle - set header_text in domains.yaml to customize #}
+    <p class="subtitle">Real-time HTTP monitoring status</p>
     {% endif %}
 </header>
 

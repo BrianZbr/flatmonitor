@@ -47,8 +47,8 @@ Benefits:
 Error handling uses `pydantic.ValidationError` for model validation issues. Other errors (missing config file, duplicate IDs) continue to use standard exceptions.
 
 ### ConfigLoader Settings
-- **rotation_interval_seconds**: How long to keep data in `data/live/` before archiving (default: 86400 = 24 hours). Shorter intervals (e.g., 4 hours) available for high-volume scenarios.
-- **retention_days**: How many days to keep archived data before deletion (default: 7).
+- **rotation_interval_seconds**: How long to keep data in `data/live/` before archiving (default: 86400 = 24 hours). Shorter intervals available for high-volume scenarios.
+- **retention_days**: How many days to keep archived data before deletion (default: 7). **Note**: Archives are stored indefinitely in `data/archive/`; retention only affects cleanup.
 
 ### DomainConfig
 - **id**: Unique identifier.
@@ -340,7 +340,7 @@ settings:
 
 **Behavior:**
 - `title`: Used in `<title>` tag, page header, and footer
-- `header_text`: Optional subtitle shown below the main title (defaults to "Real-time synthetic monitoring status")
+- `header_text`: Optional subtitle shown below the main title (defaults to "Real-time HTTP monitoring status")
 - `announcement`: If set, displays a yellow banner at the top of all pages (plain text only, no HTML)
 - `footer_links`: Array of link objects rendered in the footer, opens in new tab
 - `sort_by`: Controls display order of sites and domains

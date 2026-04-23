@@ -6,7 +6,7 @@ Create `/etc/systemd/system/flatmonitor.service`:
 
 ```ini
 [Unit]
-Description=FlatMonitor - Synthetic Monitoring
+Description=FlatMonitor - HTTP Monitoring
 After=network.target
 
 [Service]

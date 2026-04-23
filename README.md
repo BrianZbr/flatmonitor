@@ -1,6 +1,6 @@
 # FlatMonitor
 
-A lightweight, high-performance synthetic monitoring tool that performs HTTP checks and generates a static HTML dashboard.
+A lightweight, high-performance HTTP monitoring tool that performs health checks and generates a static HTML dashboard.
 
 ## Features
 
@@ -11,7 +11,8 @@ A lightweight, high-performance synthetic monitoring tool that performs HTTP che
 - **Content Verification**: Primary status check based on expected content in response body
 - **Protection Detection**: Auto-detects protection type (DDoS-Guard, Cloudflare, AWS WAF, reCAPTCHA, hCaptcha)
 - **CSV Storage**: Append-only logs with automatic daily rotation and retention
-- **Real-time Aggregation**: 4-hour history with configurable buckets and forward-fill
+- **Real-time Dashboard**: 4-hour rolling display with configurable buckets
+- **CSV Archiving**: Unlimited daily archives with configurable retention (default: 7 days)
 
 ## Quick Start
 
