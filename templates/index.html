@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<header>
+    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem;">
+        {% if logo %}
+        <img src="assets/{{ logo }}" alt="Logo" style="height: 48px; width: auto;">
+        {% endif %}
+        <h1>{{ title }}</h1>
+    </div>
+    {% if header_text %}
+    <p class="subtitle">{{ header_text }}</p>
+    {% else %}
+    <p class="subtitle">Real-time synthetic monitoring status</p>
+    {% endif %}
+</header>
+
+{% if announcement %}
+<div class="announcement">
+    <p>{{ announcement }}</p>
+</div>
+{% endif %}
+
+{% if sites %}
+<!-- Site Grid - Dense horizontal layout on desktop -->
+{% if header_hint %}
+<p class="subtitle" style="font-size: 0.8rem; margin-bottom: 1rem;">
+    <em>{{ header_hint }}</em>
+</p>
+{% endif %}
+<div class="site-grid">
+    {% for site in sites %}
+    <div class="site-card">
+        <div class="site-card-header">
+            <a href="{{ site.id }}.html" class="site-card-title">{{ site.id }}</a>
+            <span class="status-badge {{ site.health.value|health_class }}">{{ site.health.value }}</span>
+        </div>
+
+        <!-- Mini Summary -->
+        <div class="site-mini-summary">
+            <span>{{ site.domain_count }} domains</span>
+            {% if site.up_count > 0 %}<span class="count" style="color: #3fb950;">{{ site.up_count }} UP</span>{% endif %}
+            {% if site.protected_count > 0 %}<span class="count" style="color: #3fb950;">{{ site.protected_count }} PROTECTED</span>{% endif %}
+            {% if site.down_count > 0 %}<span class="count" style="color: #f85149;">{{ site.down_count }} DOWN</span>{% endif %}
+            {% if site.timeout_count > 0 %}<span class="count" style="color: #f85149;">{{ site.timeout_count }} TIMEOUT</span>{% endif %}
+            {% if site.unknown_count > 0 %}<span class="count" style="color: #6e7681;">{{ site.unknown_count }} UNKNOWN</span>{% endif %}
+            {% if site.last_check %}<span style="color: #6e7681; margin-left: auto;">Last check: {{ site.last_check|format_time_ago }}</span>{% endif %}
+        </div>
+
+        <!-- Dense Domain List -->
+        <ul class="domain-list-dense">
+            {% for domain in site.domains %}
+            <li class="domain-item-dense">
+                <div class="domain-left-group">
+                    {% if not domain.link_disabled %}
+                    <a href="{{ domain.url }}" class="domain-link" target="_blank" rel="noopener noreferrer" title="{{ domain.url }}">
+                        {{ domain.url | replace('https://', '') | replace('http://', '') }}
+                    </a>
+                    {% else %}
+                    <span class="domain-link-disabled" title="{{ domain.url }}">{{ domain.url | replace('https://', '') | replace('http://', '') }}</span>
+                    {% endif %}
+
+                    <div class="mini-timeline-inline">
+                        {% for span in domain.timeline %}
+                        <span class="{{ span.class }}"></span>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="status-col">
+                    <a href="{{ site.id }}.html#{{ domain.id }}" class="status-badge compact {{ domain.status.value|status_class }}" title="{{ domain.status.value }} - Click for details">
+                        {{ domain.status.value }}
+                    </a>
+                    {% if domain.last_check.cert_expiry|format_cert_expiry != 'N/A' and '⚠' in domain.last_check.cert_expiry|format_cert_expiry %}
+                    <span class="cert-warning" title="Certificate expiring soon: {{ domain.last_check.cert_expiry|format_cert_expiry }}">⚠</span>
+                    {% endif %}
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card">
+    <p>No sites configured. Add domains to config/domains.yaml to get started.</p>
+</div>
+{% endif %}
+
+{% include '_legend.html' %}
+{% endblock %}

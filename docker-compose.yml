@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  flatmonitor:
+    build: .
+    container_name: flatmonitor
+    restart: unless-stopped
+    volumes:
+      - ./config/domains.yaml:/app/config/domains.yaml:ro
+      - ./data:/app/data
+      - ./public:/app/public
+    environment:
+      - FLATMONITOR_CONFIG=/app/config/domains.yaml
+    # No ports needed - generates static files to ./public
+    # Serve public/ with nginx, caddy, or any static file server
+
+  # Optional: Serve dashboard with Caddy (auto HTTPS)
+  # caddy:
+  #   image: caddy:2-alpine
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./public:/usr/share/caddy:ro
+  #     - caddy_data:/data
+  #     - caddy_config:/config
+
+# volumes:
+#   caddy_data:
+#   caddy_config:

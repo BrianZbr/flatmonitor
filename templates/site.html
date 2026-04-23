@@ -1,0 +1,307 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<a href="index.html" class="back-link">← Back to Dashboard</a>
+
+{% if announcement %}
+<div class="announcement">
+    <p>{{ announcement }}</p>
+</div>
+{% endif %}
+
+<header>
+    <h1>{{ site_id }}</h1>
+    <p class="subtitle">
+        Status: <span class="status-badge {{ health.value }}">{{ health.value }}</span>
+    </p>
+</header>
+
+{% for domain in domains %}
+<div class="card" id="{{ domain.id }}">
+    <div class="card-header">
+        <div class="domain-info">
+            {% if not domain.link_disabled %}
+            <a href="{{ domain.url }}" class="card-title" target="_blank" rel="noopener noreferrer">{{ domain.url | replace('https://', '') | replace('http://', '') }}</a>
+            {% else %}
+            <span class="card-title">{{ domain.url | replace('https://', '') | replace('http://', '') }}</span>
+            {% endif %}
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <div class="log-links">
+                <button class="log-link" onclick='openLogModal("{{ domain.id | e }}", "{{ domain.log_path | e }}", "{{ domain.url | replace("https://", "") | replace("http://", "") | e }}", {{ domain.archive_links | tojson | default("[]") }})' title="View recent logs">logs</button>
+            </div>
+            <span class="status-badge {{ domain.status.value|status_class }}">
+                {{ domain.status.value }}
+            </span>
+        </div>
+    </div>
+
+    <!-- Expected vs Actual -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 0.75rem 0; font-size: 0.8rem;">
+        <!-- Expected Configuration -->
+        <div style="background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 0.75rem;">
+            <div style="color: #58a6ff; font-weight: 600; margin-bottom: 0.5rem; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.05em;">Expected</div>
+            <div style="color: #8b949e; line-height: 1.5;">
+                {% if domain.expected.http_status %}
+                <div>Status: <span style="color: #c9d1d9;">{{ domain.expected.http_status }}</span></div>
+                {% endif %}
+                {% if domain.expected.body_contains %}
+                <div>Content: <span style="color: #c9d1d9; font-style: italic;">"{{ domain.expected.body_contains }}"</span></div>
+                {% endif %}
+                {% if domain.expected.bot_protection %}
+                <div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #21262d;">
+                    <span style="color: #d29922;">Protection OK if:</span>
+                    {% if domain.expected.bot_protection.status_code %}
+                    <div style="padding-left: 0.5rem;">• Status: {{ domain.expected.bot_protection.status_code }}</div>
+                    {% endif %}
+                    {% if domain.expected.bot_protection.indicator %}
+                    <div style="padding-left: 0.5rem;">• Indicator: "{{ domain.expected.bot_protection.indicator }}"</div>
+                    {% endif %}
+                </div>
+                {% endif %}
+                {% if not domain.expected.http_status and not domain.expected.body_contains and not domain.expected.bot_protection %}
+                <div style="color: #6e7681; font-style: italic;">No specific expectations configured</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Actual Results -->
+        <div style="background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 0.75rem;">
+            <div style="color: #f0883e; font-weight: 600; margin-bottom: 0.5rem; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.05em;">Actual</div>
+            <div style="color: #8b949e; line-height: 1.5;">
+                {% if domain.last_check.http_status %}
+                <div>Status: <span style="color: #c9d1d9;">{{ domain.last_check.http_status }}</span></div>
+                {% endif %}
+                {% if domain.last_check.latency_ms %}
+                <div>Latency: <span style="color: #c9d1d9;">{{ domain.last_check.latency_ms }}ms</span></div>
+                {% endif %}
+                {% if domain.last_check.failure_type %}
+                <div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #21262d; color: #da3633;">
+                    {{ domain.last_check.failure_type }}
+                </div>
+                {% endif %}
+                {% if domain.status.value == 'DEGRADED' %}
+                <div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #21262d; color: #f7dc6f; font-size: 0.75rem;">
+                    <strong>DEGRADED:</strong> 1 check failed.
+                    {% set ns = namespace(found=false) %}
+                    {% for span in domain.timeline %}
+                    {% if not ns.found and span.status.value in ('DOWN', 'TIMEOUT') %}
+                    {% set ns.found = true %}
+                    <br><span style="color: #da3633;">Latest: {{ span.time }} | {{ span.status.value }}{% if span.http_status %} | HTTP {{ span.http_status }}{% endif %}{% if span.failure_type %} | {{ span.failure_type }}{% endif %}</span>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% if domain.status.value == 'DOWN' %}
+                <div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #21262d; color: #da3633; font-size: 0.75rem;">
+                    <strong>DOWN:</strong> 2+ checks failed.
+                    {% set ns2 = namespace(found=false) %}
+                    {% for span in domain.timeline %}
+                    {% if not ns2.found and span.status.value in ('DOWN', 'TIMEOUT') %}
+                    {% set ns2.found = true %}
+                    <br><span>Latest: {{ span.time }} | {{ span.status.value }}{% if span.http_status %} | HTTP {{ span.http_status }}{% endif %}{% if span.failure_type %} | {{ span.failure_type }}{% endif %}</span>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+                {% endif %}
+                <div style="margin-top: 0.5rem;">Cert: {% if domain.last_check.cert_expiry %}{{ domain.last_check.cert_expiry|format_cert_expiry }}{% else %}N/A{% endif %}</div>
+                <div style="margin-top: 0.5rem; color: #6e7681; font-size: 0.75rem;">
+                    Last check: {{ domain.last_check.timestamp|format_time_ago }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="timeline" data-log-path="{{ domain.log_path }}">
+        {% for span in domain.timeline %}
+        {% set tooltip = span.time ~ ' - ' ~ span.status.value ~ (' | HTTP ' ~ span.http_status if span.http_status else '') ~ (' | ' ~ span.latency_ms ~ 'ms' if span.latency_ms else '') ~ (' | ' ~ span.failure_type if span.failure_type else '') %}
+        <span class="{{ span.class }}" data-timestamp="{{ span.iso_time }}" data-status="{{ span.status.value }}" data-http-status="{{ span.http_status or '' }}" data-latency="{{ span.latency_ms or '' }}" data-failure="{{ span.failure_type or '' }}" title="{{ tooltip }}"></span>
+        {% endfor %}
+    </div>
+
+    {% if domain.status.value == 'PROTECTED' %}
+    <div style="margin-top: 0.75rem; padding: 0.5rem; background: #161b22; border: 1px solid #238636; border-radius: 4px; font-size: 0.75rem;">
+        <strong style="color: #3fb950;">Protected Site</strong>
+        {% if domain.last_check.protection_type %}
+        <span style="color: #58a6ff; margin-left: 0.5rem;">{{ domain.last_check.protection_type }}</span>
+        {% endif %}
+        <p style="margin: 0.25rem 0 0 0; color: #8b949e;">
+            Bot protection active.{% if domain.expected.body_contains %} Content checks skipped.{% endif %}
+        </p>
+    </div>
+    {% endif %}
+</div>
+{% endfor %}
+
+{% include '_legend.html' %}
+
+<!-- Log Preview Modal -->
+<div id="logModal" class="log-modal">
+    <div class="log-modal-content">
+        <div class="log-modal-header">
+            <h3 id="logModalTitle">Recent Log Entries</h3>
+            <button class="log-modal-close" onclick="closeLogModal()">&times;</button>
+        </div>
+        <div class="log-modal-body">
+            <div id="logModalLoading" class="log-modal-loading">Loading...</div>
+            <div id="logModalError" class="log-modal-error" style="display: none;"></div>
+            <table id="logModalTable" class="log-modal-table" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Status</th>
+                        <th>HTTP</th>
+                        <th>Latency</th>
+                        <th>Reason</th>
+                    </tr>
+                </thead>
+                <tbody id="logModalTableBody">
+                </tbody>
+            </table>
+        </div>
+        <div class="log-modal-footer">
+            <a id="logModalFullLog" href="#" target="_blank" rel="noopener noreferrer" class="log-modal-btn">View full log</a>
+            <div id="logModalArchives" class="log-modal-archives" style="display: none;">
+                <span class="log-modal-archives-label">Archives:</span>
+                <div id="logModalArchivesList" class="log-modal-archives-list"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentArchiveLinks = [];
+
+function openLogModal(domainId, logPath, domainUrl, archiveLinks) {
+    const modal = document.getElementById('logModal');
+    const title = document.getElementById('logModalTitle');
+    const loading = document.getElementById('logModalLoading');
+    const error = document.getElementById('logModalError');
+    const table = document.getElementById('logModalTable');
+    const tbody = document.getElementById('logModalTableBody');
+    const fullLogLink = document.getElementById('logModalFullLog');
+    const archivesSection = document.getElementById('logModalArchives');
+    const archivesList = document.getElementById('logModalArchivesList');
+
+    // Store archive links for potential retry
+    currentArchiveLinks = archiveLinks || [];
+
+    title.textContent = 'Recent Log Entries - ' + domainUrl;
+    loading.style.display = 'block';
+    error.style.display = 'none';
+    table.style.display = 'none';
+    fullLogLink.href = logPath;
+
+    // Populate archive links
+    if (currentArchiveLinks.length > 0) {
+        archivesList.innerHTML = currentArchiveLinks.map(archive =>
+            `<a href="${archive.url}" target="_blank" rel="noopener noreferrer" class="log-modal-archive-link">${archive.date}</a>`
+        ).join('');
+        archivesSection.style.display = 'block';
+    } else {
+        archivesSection.style.display = 'none';
+    }
+
+    modal.style.display = 'flex';
+
+    fetch(logPath)
+        .then(response => {
+            if (!response.ok) throw new Error('Failed to load log');
+            return response.text();
+        })
+        .then(text => {
+            const lines = text.trim().split('\n');
+            if (lines.length < 2) {
+                throw new Error('No log data available');
+            }
+
+            // Skip header, get last 12 entries
+            const dataRows = lines.slice(1).filter(row => row.trim()).slice(-12);
+
+            tbody.innerHTML = '';
+            dataRows.forEach(row => {
+                const cols = row.split(',');
+                if (cols.length < 7) return;
+
+                const timestamp = cols[0];
+                const status = cols[3];
+                const httpStatus = cols[4] || '-';
+                const latency = cols[5] ? cols[5] + 'ms' : '-';
+                const failure = cols[6] || '';
+
+                // Format timestamp as relative time
+                const date = new Date(timestamp);
+                const now = new Date();
+                const diffMs = now - date;
+                const diffMins = Math.floor(diffMs / 60000);
+                const diffHours = Math.floor(diffMs / 3600000);
+                const diffDays = Math.floor(diffMs / 86400000);
+
+                let timeAgo;
+                if (diffMins < 1) timeAgo = 'just now';
+                else if (diffMins < 60) timeAgo = diffMins + 'm ago';
+                else if (diffHours < 24) timeAgo = diffHours + 'h ago';
+                else timeAgo = diffDays + 'd ago';
+
+                // Status class mapping
+                const statusClass = status.toLowerCase().replace(/_/g, '-');
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${timeAgo}</td>
+                    <td><span class="log-modal-status ${statusClass}">${status}</span></td>
+                    <td>${httpStatus}</td>
+                    <td>${latency}</td>
+                    <td>${failure}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            loading.style.display = 'none';
+            table.style.display = 'table';
+        })
+        .catch(err => {
+            loading.style.display = 'none';
+            error.style.display = 'block';
+
+            // Check if this is a CORS error
+            const isCorsError = err.message.includes('Failed to fetch') ||
+                                err.message.includes('NetworkError') ||
+                                err.message.includes('CORS');
+
+            if (isCorsError || err.name === 'TypeError') {
+                error.innerHTML = `
+                    <div style="margin-bottom: 0.5rem;">Unable to preview logs due to browser security (CORS).</div>
+                    <div style="font-size: 0.85rem; color: #8b949e;">
+                        This happens when viewing the dashboard locally. Use the "View full log" button below to access logs directly.
+                    </div>
+                `;
+            } else {
+                error.textContent = 'Error: ' + err.message;
+            }
+        });
+}
+
+function closeLogModal() {
+    const modal = document.getElementById('logModal');
+    modal.style.display = 'none';
+}
+
+// Close modal on ESC key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeLogModal();
+    }
+});
+
+// Close modal when clicking outside
+window.onclick = function(event) {
+    const modal = document.getElementById('logModal');
+    if (event.target === modal) {
+        closeLogModal();
+    }
+}
+</script>
+{% endblock %}

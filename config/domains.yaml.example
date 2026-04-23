@@ -1,0 +1,118 @@
+# FlatMonitor Domain Configuration
+#
+# This file defines the domains to monitor.
+# Domain IDs should follow the format: site_id.domain_name
+
+# Optional settings
+# settings:
+#   rotation_interval_seconds: 86400  # 24 hours / daily (default)
+#   noindex: true  # Prevent search engine indexing (default: false)
+#
+#   # Dashboard customization (all optional)
+#   dashboard:
+#     title: "FlatMonitor"       # Default: "FlatMonitor"
+#     header_text: "Service monitoring"      # Subtitle below title
+#     logo: "logo.png"                       # Header logo image (place in public/assets/)
+#     favicon: "favicon.ico"                   # Browser favicon (place in public/assets/)
+#     announcement: "Maintenance Sat 2AM"   # Yellow banner on all pages
+#     footer_links:                          # Links shown in footer
+#       - text: "Terms of Service"
+#         url: "https://example.com/terms"
+#       - text: "Privacy Policy"
+#         url: "https://example.com/privacy"
+#     header_hint: "Click any site title for detailed status and logs."  # Hint above site grid (index page)
+#     footer_explanation: "<strong>How to read:</strong> Green = matches expectations."  # Custom HTML footer (both pages, optional)
+#
+#   # Storage backend for dashboard output (default: filesystem)
+#   # Options: filesystem, r2, s3
+#   storage:
+#     type: filesystem  # Default - writes to local public/ directory
+#     filesystem:
+#       output_dir: "public"
+#
+#   # Cloudflare R2 storage (S3-compatible, zero egress fees)
+  # Set environment variables: FLATMONITOR_R2_ACCOUNT_ID, FLATMONITOR_R2_ACCESS_KEY_ID, FLATMONITOR_R2_SECRET_ACCESS_KEY, FLATMONITOR_R2_BUCKET_NAME
+  # storage:
+  #   type: r2
+  #   r2:
+  #     account_id: "${FLATMONITOR_R2_ACCOUNT_ID}"        # Or hardcode: "abc123..."
+  #     access_key_id: "${FLATMONITOR_R2_ACCESS_KEY_ID}"  # From R2 API token
+  #     secret_access_key: "${FLATMONITOR_R2_SECRET_ACCESS_KEY}"  # From R2 API token
+  #     bucket_name: "${FLATMONITOR_R2_BUCKET_NAME}"      # e.g., "flatmonitor-dashboard"
+  #     public_domain: "https://status.yourdomain.com"  # Optional custom domain
+  #     cache_max_age: 60  # Cache seconds (default: 60)
+  #   # Local filesystem backup (enabled by default when using cloud storage)
+  #   filesystem:
+  #     output_dir: "public"
+  #     enabled: true  # Set to false to skip local file output
+#
+#   # AWS S3 or S3-compatible storage (MinIO, etc.)
+  # Set environment variables: FLATMONITOR_AWS_ACCESS_KEY_ID, FLATMONITOR_AWS_SECRET_ACCESS_KEY, FLATMONITOR_S3_BUCKET_NAME
+  # storage:
+  #   type: s3
+  #   s3:
+  #     access_key_id: "${FLATMONITOR_AWS_ACCESS_KEY_ID}"
+  #     secret_access_key: "${FLATMONITOR_AWS_SECRET_ACCESS_KEY}"
+  #     bucket_name: "${FLATMONITOR_S3_BUCKET_NAME}"
+  #     region: "us-east-1"  # AWS region (ignored for S3-compatible services)
+  #     endpoint_url: "https://s3.example.com"  # Optional, for S3-compatible services
+  #     public_domain: "https://status.yourdomain.com"  # Optional custom domain
+  #   # Local filesystem backup (enabled by default when using cloud storage)
+  #   filesystem:
+  #     output_dir: "public"
+  #     enabled: true  # Set to false to skip local file output
+#   #     enabled: true  # Set to false to skip local file output
+
+domains:
+  # Example: Monitoring a core website
+  - id: acme.www
+    role: core
+    url: https://www.acme.com
+    expect:
+      http_status: 200
+      body_contains: "Welcome"
+    bot_protection_string: "Cloudflare"
+    timeout: 20
+
+  # Example: Monitoring an API endpoint
+  - id: acme.api
+    role: core
+    url: https://api.acme.com/health
+    expect:
+      http_status: 200
+    timeout: 10
+
+  # Example: Monitoring a supplementary service
+  - id: acme.docs
+    role: supplementary
+    url: https://docs.acme.com
+    expect:
+      http_status: 200
+    timeout: 30
+
+  # Example: Another site
+  - id: example.www
+    role: core
+    url: https://example.com
+    expect:
+      http_status: 200
+    timeout: 20
+
+  # Test examples using httpbin.org (for quick testing)
+  - id: httpbin.get
+    url: https://httpbin.org/get
+    expect:
+      http_status: 200
+    role: core
+
+  - id: httpbin.status200
+    url: https://httpbin.org/status/200
+    expect:
+      http_status: 200
+    role: supplementary
+
+  - id: httpbin.status500
+    url: https://httpbin.org/status/500
+    expect:
+      http_status: 200  # This will show as DOWN since endpoint returns 500
+    role: supplementary

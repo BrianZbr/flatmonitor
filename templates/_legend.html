@@ -1,0 +1,30 @@
+<div class="legend">
+    <div class="legend-item" title="Site is accessible (UP) or behind expected bot protection (PROTECTED)">
+        <div class="legend-color up"></div>
+        <span>Up / Protected</span>
+    </div>
+    <div class="legend-item" title="1 check failed in 5-minute window">
+        <div class="legend-color degraded"></div>
+        <span>Degraded</span>
+    </div>
+    <div class="legend-item" title="2+ failures, unexpected response, or timeout">
+        <div class="legend-color down"></div>
+        <span>Down / Timeout</span>
+    </div>
+    <div class="legend-item" title="No recent check data">
+        <div class="legend-color unknown"></div>
+        <span>Unknown</span>
+    </div>
+</div>
+
+<div style="margin-top: 1rem; font-size: 0.75rem; color: #6e7681; line-height: 1.6;">
+    {% if footer_explanation %}
+    {{ footer_explanation | safe }}
+    {% else %}
+    <strong>How to read:</strong> Green = site is UP or behind expected protection (PROTECTED).
+    Yellow = 1 check failed in 5-minute window (DEGRADED).
+    Red = 2+ failures (DOWN), unexpected response, or timed out (TIMEOUT).
+    Gray = no recent data (UNKNOWN).
+    Timeline shows last 4 hours (newest right).
+    {% endif %}
+</div>
