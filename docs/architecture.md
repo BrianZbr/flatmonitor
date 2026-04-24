@@ -313,8 +313,8 @@ settings:
 **Use Cases:**
 - **Staging**: `staging.example.org` with `noindex: true` — accessible but not discoverable
 - **Production**: `status.example.org` without setting — publicly discoverable
-Prvate/IternalDfut bhavi()dhoardndexed by rch engins
-**Not*bli  StaTus Page re Setlinoindea: fr seeseo allpwtiearch nngtheo n extngnsitive data, add authentication.
+**Private/Internal Dashboard Behavior**: When `noindex: true`, dashboard pages include `<meta name="robots" content="noindex, nofollow">` to prevent indexing by search engines.
+**Note**: Public status pages should still be secured with authentication for sensitive data.
 
 ### Dashboard Customization
 
