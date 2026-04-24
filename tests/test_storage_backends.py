@@ -5,7 +5,7 @@ Tests for storage backend implementations.
 import pytest
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock, MagicMock, patch
 
 from app.storage_backends import (
     FilesystemBackend,
@@ -14,6 +14,7 @@ from app.storage_backends import (
 )
 
 
+@pytest.mark.unit
 class TestFilesystemBackend:
     """Test the local filesystem storage backend."""
 
@@ -71,6 +72,7 @@ class TestFilesystemBackend:
             backend.upload_logs(data_dir)
 
 
+@pytest.mark.unit
 class TestMultiStorageBackend:
     """Test the multi-backend wrapper that writes to both primary and secondary."""
 
@@ -150,6 +152,7 @@ class TestMultiStorageBackend:
         secondary.upload_logs.assert_called_once_with(data_dir)
 
 
+@pytest.mark.unit
 class TestCreateStorageBackend:
     """Test the factory function for creating storage backends."""
 
@@ -164,7 +167,8 @@ class TestCreateStorageBackend:
 
             assert isinstance(backend, FilesystemBackend)
 
-    def test_creates_r2_backend_alone_when_filesystem_disabled(self):
+    @patch('app.storage_backends.R2Backend')
+    def test_creates_r2_backend_alone_when_filesystem_disabled(self, mock_r2):
         config = {
             "type": "r2",
             "filesystem": {"enabled": False, "output_dir": "public"},
@@ -178,10 +182,21 @@ class TestCreateStorageBackend:
 
         backend = create_storage_backend(config)
 
-        # Should be R2Backend directly, not wrapped
-        assert backend.__class__.__name__ == "R2Backend"
+        # Should create R2Backend with correct parameters
+        mock_r2.assert_called_once_with(
+            account_id="test123",
+            access_key_id="AKIA...",
+            secret_access_key="secret...",
+            bucket_name="test-bucket",
+            public_domain=None,
+            endpoint_url=None,
+            region="auto",
+            cache_max_age=60
+        )
+        assert backend == mock_r2.return_value
 
-    def test_wraps_r2_in_multi_backend_when_filesystem_enabled(self):
+    @patch('app.storage_backends.R2Backend')
+    def test_wraps_r2_in_multi_backend_when_filesystem_enabled(self, mock_r2):
         with tempfile.TemporaryDirectory() as tmpdir:
             config = {
                 "type": "r2",
@@ -198,7 +213,8 @@ class TestCreateStorageBackend:
 
             assert isinstance(backend, MultiStorageBackend)
 
-    def test_wraps_s3_in_multi_backend_when_filesystem_enabled(self):
+    @patch('app.storage_backends.S3Backend')
+    def test_wraps_s3_in_multi_backend_when_filesystem_enabled(self, mock_s3):
         with tempfile.TemporaryDirectory() as tmpdir:
             config = {
                 "type": "s3",
@@ -214,7 +230,8 @@ class TestCreateStorageBackend:
 
             assert isinstance(backend, MultiStorageBackend)
 
-    def test_filesystem_enabled_by_default_for_r2(self):
+    @patch('app.storage_backends.R2Backend')
+    def test_filesystem_enabled_by_default_for_r2(self, mock_r2):
         with tempfile.TemporaryDirectory() as tmpdir:
             config = {
                 "type": "r2",

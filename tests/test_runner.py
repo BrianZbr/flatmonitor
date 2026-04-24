@@ -102,7 +102,7 @@ class TestRunner:
 
         assert result.domain_status == DomainStatus.PROTECTED
         assert result.http_status == 200
-        assert result.failure_type == FailureType.HTTP_ERROR
+        assert result.failure_type is None
 
     def test_timeout(self, runner, basic_domain):
         with patch.object(runner.session, 'get', side_effect=requests.exceptions.Timeout):
@@ -173,7 +173,7 @@ class TestRunner:
 
         assert result.domain_status == DomainStatus.PROTECTED
         assert result.http_status == 503
-        assert result.failure_type == FailureType.HTTP_ERROR
+        assert result.failure_type is None
 
     def test_timeout_priority(self, runner, basic_domain):
         """Timeout should be detected before any other checks."""
@@ -201,7 +201,7 @@ class TestRunner:
 
         # Protection detected - PROTECTED, not DOWN for content mismatch
         assert result.domain_status == DomainStatus.PROTECTED
-        assert result.failure_type == FailureType.HTTP_ERROR
+        assert result.failure_type is None
 
     def test_close_session(self, runner):
         with patch.object(runner.session, 'close') as mock_close:

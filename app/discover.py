@@ -122,7 +122,7 @@ class DiscoveryRunner(Runner):
             return found
 
         # Check for indicators in content
-        for indicator in self.DEFAULT_BOT_INDICATORS:
+        for indicator in self.GENERIC_BOT_INDICATORS:
             if indicator in content_lower:
                 found.append({
                     'source': 'body',

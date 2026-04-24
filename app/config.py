@@ -65,7 +65,7 @@ class ConfigLoader:
         self.domains: List[DomainConfig] = []
         self.rotation_interval: int = 86400  # Default: 24 hours (daily rotation)
         self.retention_days: int = 7  # Default: 7 days of archive retention
-        self.noindex: bool = True  # Default: privacy-by-default, no search engine indexing
+        self.noindex: bool = False  # Default: allow search engine indexing
         self.dashboard: DashboardConfig = DashboardConfig()  # Default dashboard settings
         self.storage: StorageConfig = StorageConfig()  # Default filesystem storage
 
@@ -84,7 +84,7 @@ class ConfigLoader:
         settings = self.config_data.get('settings', {})
         self.rotation_interval = settings.get('rotation_interval_seconds', 86400)
         self.retention_days = settings.get('retention_days', 7)
-        self.noindex = settings.get('noindex', True)
+        self.noindex = settings.get('noindex', False)
 
         # Parse dashboard customization
         dashboard_settings = settings.get('dashboard', {})
