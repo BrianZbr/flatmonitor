@@ -382,185 +382,7 @@ while True:
     time.sleep(1)
 ```
 
-## 10. Default Settings
-- **Check Interval**: 60s (fixed).
-- **HTTP Timeout**: 20s.
-- **History Window**: 4 hours.
-- **Bucket Size**: 5 minutes (aggregates up to 5 checks per bucket).
-- **Worker Pool Size**: 10 threads.
-- **Rotation Interval**: 86400s (24 hours, daily rotation). Configurable for different retention needs.
-
-## 11. Testing Strategy
-
-### Unit Tests
-Test individual components in isolation:
-- **models.py**: Pydantic model validation, CSV serialization/deserialization
-- **config.py**: YAML loading, domain parsing, validation error handling
-- **runner.py**: Mock HTTP responses, status classification logic, timeout handling
-- **storage.py**: File operations, rotation logic, CSV format correctness
-- **aggregator.py**: Bucket aggregation, forward-fill logic, site health determination
-- **renderer.py**: Template rendering, throttling logic, output generation
-
-### Integration Tests
-Test component interactions:
-- Scheduler + Queue: Verify jobs are queued at correct intervals
-- Runner + Storage: Check results are properly written to CSV
-- Aggregator + Renderer: Validate dashboard generation from stored data
-
-### End-to-End Tests
-Full system verification using mock HTTP server:
-- Start monitoring with test endpoints
-- Verify CSV logs are created with correct format
-- Check dashboard HTML is generated and contains expected data
-- Test rotation by simulating time passage
-
-### Test Data
-Use httpbin.org endpoints for predictable responses:
-- `/status/200` - UP state
-- `/status/500` - DOWN state
-- `/delay/30` - TIMEOUT state
-- `/html` with specific content - body_contains validation
-
-### Configuration Example
-```yaml
-settings:
-  rotation_interval_seconds: 86400  # Optional, default 24 hours (daily)
-
-domains:
-  - id: site.domain1
-    url: https://example.com
-
-  - id: site.domain2
-    url: https://api.example.com/health
-    expect:
-      body_contains: "OK"
-
-### Manual Testing Checklist
-- [ ] Configuration loads and validates correctly
-- [ ] HTTP checks execute at specified intervals
-- [ ] All status classifications (UP, DOWN, PROTECTED, TIMEOUT, UNKNOWN) work
-- [ ] CSV files append without corruption
-- [ ] Dashboard updates within 30 seconds of new data
-- [ ] Site health correctly reflects domain status aggregation
-- [ ] Hourly rotation archives files properly
-- [ ] Cleanup removes old archives
-- [ ] Graceful shutdown processes remaining queue items
-
-## 12. UI Design Requirements
-
-### 12.1 Information Density Principle
-The dashboard must present all critical information without requiring user interaction:
-- **No click-through required** to see status bars or health details
-- All site statuses visible at a glance
-- Per-domain timelines visible on the main page
-- Latest check details visible inline
-
-### 12.2 Dashboard Layout
-
-#### Header Section
-- Dashboard title and generation timestamp
-
-#### Site Status Overview (Top Section)
-- Grid/list showing each site with its computed health status
-- Format: `site_id {health_badge}`
-- Sorted by severity: DOWN → DEGRADED → UP
-- Examples:
-  - `production 🟢 UP`
-  - `staging 🟡 DEGRADED`
-  - `legacy 🔴 DOWN`
-
-#### Site Details Cards
-Each site displayed as a card containing:
-
-**Card Header:**
-- Site ID with health badge (UP/DEGRADED/DOWN)
-
-**Site Summary Bar:**
-- Detailed domain status breakdown showing counts per status type
-- Format: "N domains" followed by status counts (only showing non-zero statuses)
-- Status indicators with semantic colors:
-  - **UP** (green) - domains with UP status
-  - **PROTECTED** (green) - domains with bot protection active
-  - **DOWN** (red) - domains that are down
-  - **DEGRADED** (yellow) - domains with single failure in bucket
-  - **TIMEOUT** (red) - domains that timed out
-  - **UNKNOWN** (gray) - domains with no recent data
-- Example: "5 domains 2 UP 1 PROTECTED 1 DOWN 1 TIMEOUT"
-- Relative timestamp: "Last check: 2m ago"
-
-**Per-Domain Timeline (Visible Without Clicking):**
-- 48 spans (4 hours of 5-minute buckets) per domain
-- Compact horizontal bar showing history
-- Color-coded: up (green), down (red), protected (green), unknown (gray)
-
-**Per-Domain Details Table:**
-Columns: Domain | Status | Response | Cert Expiry
-- **Domain**: URL (clickable unless link_disabled is set)
-- **Status**: Status badge + latency (e.g., "🟢 UP 45ms")
-- **Response**: HTTP code + body_contains check result (✓ or ✗)
-- **Cert Expiry**: Days until expiration with warning indicator
-
-### 12.2.1 Site Detail Page - Expected vs Actual Panels
-
-Each domain on the site detail page displays side-by-side comparison panels showing:
-
-**Expected Configuration Panel (Left):**
-- Expected HTTP status code (if configured)
-- Expected body content string (if configured)
-- Expected bot protection signature (status_code and indicator) if configured
-- Displayed with blue header accent
-
-**Actual Results Panel (Right):**
-- Actual HTTP status code from last check
-- Response latency in milliseconds
-- Failure type/reason if check failed
-- Certificate expiry date with status indicator
-- Relative timestamp of last check (e.g., "2m ago")
-- **DEGRADED status explanation**: When status is DEGRADED (1 failure), shows "1 check failed in the last 5-minute window" with the failed check details (time, HTTP status, failure reason) from timeline data
-- **DOWN status explanation**: When status is DOWN (2+ failures), shows "2 or more checks failed in the last 5-minute window" with all failed check details listed from timeline data
-- Displayed with orange header accent
-
-This comparison helps users quickly identify configuration mismatches and understand why a domain has a particular status.
-
-### 12.3 Data Display Specifications
-
-#### Timeline Rendering
-- 48 five-minute buckets (4 hours) - directly aggregated, no consolidation needed
-- Each bucket as a 3-4px wide span
-- Height: 16-18px
-- Gap: 2px between spans
-- **Direction**: Chronological left-to-right (oldest on left, newest on right)
-- **Aggregation Rule**: 1 failure = DEGRADED (yellow), 2+ failures = DOWN (red)
-- **Hover Interaction**: Timeline spans scale vertically and show glow effect on hover
-- **Tooltip Content**: Time, status, HTTP code, latency, and failure reason (when applicable)
-
-#### Status Badges
-- **UP**: Green (#238636) - Content found or all checks passed
-- **PROTECTED**: Green (#238636) - Bot protection detected (counts as UP)
-- **DOWN/TIMEOUT**: Red (#da3633) - Content missing, wrong status, or error
-- **DEGRADED**: Yellow (#f7dc6f) - 1 failure in a 5-minute window (transient issue)
-- **UNKNOWN**: Gray (#6e7681) - No recent data (older than 5 minutes)
-
-#### Status Legend
-Color legend displayed at the top of each dashboard page:
-- **Up / Protected**: Green square - Site is accessible or behind expected bot protection
-- **Degraded**: Yellow square - 1 check failed in 5-minute window (transient issue)
-- **Down / Timeout**: Red square - 2+ failures, unexpected response, or timeout
-- **Unknown**: Gray square - No recent check data
-
-#### Certificate Display
-- Valid: "Feb 14 (310d) ✓"
-- Expiring soon (≤30d): "Jan 15 (12d) ⚠"
-- Expired: "Dec 1 (-45d) ✗ EXPIRED"
-
-#### Direct Links
-- Each monitored domain URL must be a clickable link (by default)
-- Links open in new tab (`target="_blank" rel="noopener noreferrer"`)
-- URL displayed as truncated text (e.g., "api.example.com/v1/health") with full URL on hover
-- Links styled distinctly from plain text (underline on hover, appropriate cursor)
-- **Config Option**: `link_disabled: bool` (default: false) - When true, display URL as plain text instead of clickable link
-
-### 10. Discovery Tool (discover.py)
+## 10. Discovery Tool (discover.py)
 
 The discovery tool probes domains to identify bot protection patterns and generates appropriate configuration.
 
@@ -625,6 +447,7 @@ Site appears to be directly accessible (expect status 200).
 ```
 
 **Sporadic protection detected (--checks N):**
+```
 All indicators seen: ['blocked', 'checking your browser']
 
 ✅ Bot Protection Detected
@@ -642,13 +465,193 @@ All indicators seen: ['blocked', 'checking your browser']
    This suggests sporadic protection - configure it to avoid yellow alerts.
 ```
 
+**CDN Origin Error:**
 ```
 ⚠️  CDN origin error detected (status 522).
 The site appears to be down - the CDN cannot reach the origin server.
 This is not bot protection, it's a server availability issue.
 ```
 
-### 12.5 Responsive Design
+## 11. Default Settings
+- **Check Interval**: 60s (fixed).
+- **HTTP Timeout**: 20s.
+- **History Window**: 4 hours.
+- **Bucket Size**: 5 minutes (aggregates up to 5 checks per bucket).
+- **Worker Pool Size**: 10 threads.
+- **Rotation Interval**: 86400s (24 hours, daily rotation). Configurable for different retention needs.
+
+## 12. Testing Strategy
+
+### Unit Tests
+Test individual components in isolation:
+- **models.py**: Pydantic model validation, CSV serialization/deserialization
+- **config.py**: YAML loading, domain parsing, validation error handling
+- **runner.py**: Mock HTTP responses, status classification logic, timeout handling
+- **storage.py**: File operations, rotation logic, CSV format correctness
+- **aggregator.py**: Bucket aggregation, forward-fill logic, site health determination
+- **renderer.py**: Template rendering, throttling logic, output generation
+
+### Integration Tests
+Test component interactions:
+- Scheduler + Queue: Verify jobs are queued at correct intervals
+- Runner + Storage: Check results are properly written to CSV
+- Aggregator + Renderer: Validate dashboard generation from stored data
+
+### End-to-End Tests
+Full system verification using mock HTTP server:
+- Start monitoring with test endpoints
+- Verify CSV logs are created with correct format
+- Check dashboard HTML is generated and contains expected data
+- Test rotation by simulating time passage
+
+### Test Data
+Use httpbin.org endpoints for predictable responses:
+- `/status/200` - UP state
+- `/status/500` - DOWN state
+- `/delay/30` - TIMEOUT state
+- `/html` with specific content - body_contains validation
+
+### Configuration Example
+```yaml
+settings:
+  rotation_interval_seconds: 86400  # Optional, default 24 hours (daily)
+
+domains:
+  - id: site.domain1
+    url: https://example.com
+
+  - id: site.domain2
+    url: https://api.example.com/health
+    expect:
+      body_contains: "OK"
+```
+
+### Manual Testing Checklist
+- [ ] Configuration loads and validates correctly
+- [ ] HTTP checks execute at specified intervals
+- [ ] All status classifications (UP, DOWN, PROTECTED, TIMEOUT, UNKNOWN) work
+- [ ] CSV files append without corruption
+- [ ] Dashboard updates within 30 seconds of new data
+- [ ] Site health correctly reflects domain status aggregation
+- [ ] Hourly rotation archives files properly
+- [ ] Cleanup removes old archives
+- [ ] Graceful shutdown processes remaining queue items
+
+## 13. UI Design Requirements
+
+### 13.1 Information Density Principle
+The dashboard must present all critical information without requiring user interaction:
+- **No click-through required** to see status bars or health details
+- All site statuses visible at a glance
+- Per-domain timelines visible on the main page
+- Latest check details visible inline
+
+### 13.2 Dashboard Layout
+
+#### Header Section
+- Dashboard title and generation timestamp
+
+#### Site Status Overview (Top Section)
+- Grid/list showing each site with its computed health status
+- Format: `site_id {health_badge}`
+- Sorted by severity: DOWN → DEGRADED → UP
+- Examples:
+  - `production 🟢 UP`
+  - `staging 🟡 DEGRADED`
+  - `legacy 🔴 DOWN`
+
+#### Site Details Cards
+Each site displayed as a card containing:
+
+**Card Header:**
+- Site ID with health badge (UP/DEGRADED/DOWN)
+
+**Site Summary Bar:**
+- Detailed domain status breakdown showing counts per status type
+- Format: "N domains" followed by status counts (only showing non-zero statuses)
+- Status indicators with semantic colors:
+  - **UP** (green) - domains with UP status
+  - **PROTECTED** (green) - domains with bot protection active
+  - **DOWN** (red) - domains that are down
+  - **DEGRADED** (yellow) - domains with single failure in bucket
+  - **TIMEOUT** (red) - domains that timed out
+  - **UNKNOWN** (gray) - domains with no recent data
+- Example: "5 domains 2 UP 1 PROTECTED 1 DOWN 1 TIMEOUT"
+- Relative timestamp: "Last check: 2m ago"
+
+**Per-Domain Timeline (Visible Without Clicking):**
+- 48 spans (4 hours of 5-minute buckets) per domain
+- Compact horizontal bar showing history
+- Color-coded: up (green), down (red), protected (green), unknown (gray)
+
+**Per-Domain Details Table:**
+Columns: Domain | Status | Response | Cert Expiry
+- **Domain**: URL (clickable unless link_disabled is set)
+- **Status**: Status badge + latency (e.g., "🟢 UP 45ms")
+- **Response**: HTTP code + body_contains check result (✓ or ✗)
+- **Cert Expiry**: Days until expiration with warning indicator
+
+### 13.3 Data Display Specifications
+
+#### Timeline Rendering
+- 48 five-minute buckets (4 hours) - directly aggregated, no consolidation needed
+- Each bucket as a 3-4px wide span
+- Height: 16-18px
+- Gap: 2px between spans
+- **Direction**: Chronological left-to-right (oldest on left, newest on right)
+- **Aggregation Rule**: 1 failure = DEGRADED (yellow), 2+ failures = DOWN (red)
+- **Hover Interaction**: Timeline spans scale vertically and show glow effect on hover
+- **Tooltip Content**: Time, status, HTTP code, latency, and failure reason (when applicable)
+
+#### Status Badges
+- **UP**: Green (#238636) - Content found or all checks passed
+- **PROTECTED**: Green (#238636) - Bot protection detected (counts as UP)
+- **DOWN/TIMEOUT**: Red (#da3633) - Content missing, wrong status, or error
+- **DEGRADED**: Yellow (#f7dc6f) - 1 failure in a 5-minute window (transient issue)
+- **UNKNOWN**: Gray (#6e7681) - No recent data
+
+#### Status Legend
+Color legend displayed at the top of each dashboard page:
+- **Up / Protected**: Green square - Site is accessible or behind expected bot protection
+- **Degraded**: Yellow square - 1 check failed in 5-minute window (transient issue)
+- **Down / Timeout**: Red square - 2+ failures, unexpected response, or timeout
+- **Unknown**: Gray square - No recent check data
+
+#### Certificate Display
+- Valid: "Feb 14 (310d) ✓"
+- Expiring soon (≤30d): "Jan 15 (12d) ⚠"
+- Expired: "Dec 1 (-45d) ✗ EXPIRED"
+
+#### Direct Links
+- Each monitored domain URL must be a clickable link (by default)
+- Links open in new tab (`target="_blank" rel="noopener noreferrer"`)
+- URL displayed as truncated text (e.g., "api.example.com/v1/health") with full URL on hover
+- Links styled distinctly from plain text (underline on hover, appropriate cursor)
+- **Config Option**: `link_disabled: bool` (default: false) - When true, display URL as plain text instead of clickable link
+
+### 13.4 Site Detail Page - Expected vs Actual Panels
+
+Each domain on the site detail page displays side-by-side comparison panels showing:
+
+**Expected Configuration Panel (Left):**
+- Expected HTTP status code (if configured)
+- Expected body content string (if configured)
+- Expected bot protection signature (status_code and indicator) if configured
+- Displayed with blue header accent
+
+**Actual Results Panel (Right):**
+- Actual HTTP status code from last check
+- Response latency in milliseconds
+- Failure type/reason if check failed
+- Certificate expiry date with status indicator
+- Relative timestamp of last check (e.g., "2m ago")
+- **DEGRADED status explanation**: When status is DEGRADED (1 failure), shows "1 check failed in the last 5-minute window" with the failed check details (time, HTTP status, failure reason) from timeline data
+- **DOWN status explanation**: When status is DOWN (2+ failures), shows "2 or more checks failed in the last 5-minute window" with all failed check details listed from timeline data
+- Displayed with orange header accent
+
+This comparison helps users quickly identify configuration mismatches and understand why a domain has a particular status.
+
+### 13.5 Responsive Design
 Following the industry-standard pattern for graceful mobile adaptation:
 
 **Desktop (>768px):**
@@ -667,16 +670,16 @@ Following the industry-standard pattern for graceful mobile adaptation:
   - Cert Expiry column hidden on very small screens
 - **Site Summary**: Wraps to multiple lines if needed, maintains readability
 
-## 13. SSL Certificate Monitoring
+## 14. SSL Certificate Monitoring
 
-### 13.1 Certificate Data Collection
+### 14.1 Certificate Data Collection
 - Extract SSL certificate expiration date during HTTP checks
 - Store certificate metadata in separate JSON files (`data/certs/{site}/{domain}.json`)
 - Format: ISO 8601 date string (e.g., "2025-02-14T00:00:00Z")
 - Null if check failed or non-HTTPS URL
 - **Caching**: Certificate checks are cached with 24-hour TTL to avoid TLS overhead on every check
 
-### 13.2 Certificate Storage (cert_storage.py)
+### 14.2 Certificate Storage (cert_storage.py)
 The `CertStorage` class manages SSL certificate metadata separately from check results:
 - **Location**: `data/certs/{site_id}/{domain_name}.json`
 - **TTL**: 24 hours (configurable) - certificates are checked once per day, not every minute
@@ -686,12 +689,12 @@ The `CertStorage` class manages SSL certificate metadata separately from check r
   - Removes duplicate timestamps from CSV logs
   - Simpler cert status queries without parsing entire log history
 
-### 13.3 Certificate Status Logic
+### 14.3 Certificate Status Logic
 - **Valid**: Expiry > 7 days from now
 - **Expiring Soon**: Expiry ≤ 7 days from now
 - **Expired**: Expiry < current date
 
-### 13.4 Certificate Display Rules
+### 14.4 Certificate Display Rules
 - Certificate expiry does NOT affect UP/DOWN status
 - **Detail page**: Always displays certificate info (shows "N/A" for non-HTTPS)
 - **Main page**: Shows certificate warning indicator (⚠) only when ≤7 days to expiry or expired
