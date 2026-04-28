@@ -403,6 +403,175 @@ class TestLegacyCompatibility:
         assert results == []
 
 
+class TestMigrationErrors:
+    """Test error handling in migration functions per architecture section 15.7."""
+
+    def test_migrate_v1_to_v2_handles_short_row(self):
+        """Migration should handle rows shorter than expected v1 fields."""
+        from app.migrations import migrate_v1_to_v2
+        ts = recent_timestamp()
+        short_row = [ts, "test-site"]  # Only 2 fields, v1 expects 7
+        v1_headers = get_fields_for_version(1)
+
+        result = migrate_v1_to_v2(short_row.copy(), v1_headers)
+
+        # Should pad to v2 length (8 fields)
+        assert len(result) == 8
+        assert result[0] == ts
+        assert result[1] == "test-site"
+        assert result[-1] == ""  # protection_type added
+
+    def test_migrate_v1_to_v2_handles_extra_fields(self):
+        """Migration should handle rows with more fields than expected."""
+        from app.migrations import migrate_v1_to_v2
+        ts = recent_timestamp()
+        # Row with 10 fields (v1 expects 7)
+        extra_row = [ts, "test-site", "test-site.example.com",
+                     "UP", "200", "45", "", "extra1", "extra2", "extra3"]
+        v1_headers = get_fields_for_version(1)
+
+        result = migrate_v1_to_v2(extra_row.copy(), v1_headers)
+
+        # Migration preserves all fields and adds protection_type (doesn't truncate)
+        assert len(result) == 11  # Original 10 + protection_type added
+
+    def test_apply_migrations_unknown_version_uses_default_padding(self):
+        """Unknown schema versions should use default padding migration."""
+        from app.migrations import apply_migrations
+        ts = recent_timestamp()
+        row = [ts, "test-site", "test-site.example.com",
+               "UP", "200", "45", "", ""]  # v2 format
+
+        # Simulate reading as version 999 (unknown future version)
+        result = apply_migrations(row.copy(), 999, CURRENT_SCHEMA_VERSION,
+                                  get_fields_for_version(CURRENT_SCHEMA_VERSION))
+
+        # Should use default migration (v999 treated as having current fields)
+        assert len(result) == len(get_fields_for_version(CURRENT_SCHEMA_VERSION))
+
+    def test_apply_migrations_no_change_if_current(self, v2_csv_row):
+        """If version matches current, row should be returned unchanged."""
+        from app.migrations import apply_migrations
+        v2_headers = get_fields_for_version(2)
+
+        result = apply_migrations(v2_csv_row.copy(), 2, 2, v2_headers)
+
+        assert result == v2_csv_row
+
+    def test_apply_migrations_handles_non_string_values(self):
+        """Migration should handle non-string values gracefully."""
+        from app.migrations import migrate_v1_to_v2
+        # Row with numeric values (as might come from malformed CSV)
+        row = [123456, "test-site", "test-site.example.com",
+               "UP", 200, 45, None]  # Mixed types
+        v1_headers = get_fields_for_version(1)
+
+        # Should not crash, convert to strings
+        result = migrate_v1_to_v2(row, v1_headers)
+
+        assert len(result) == 8
+        assert result[4] == 200  # Numbers pass through
+        assert result[-1] == ""  # protection_type added
+
+    def test_default_migration_adds_new_fields(self):
+        """Default migration should add new fields with empty values."""
+        from app.migrations import _default_migration
+        v1_headers = get_fields_for_version(1)
+        v2_headers = get_fields_for_version(2)
+        row = [recent_timestamp(), "test-site", "test-site.example.com",
+               "UP", "200", "45", ""]
+
+        result = _default_migration(row, v1_headers, v2_headers)
+
+        # Should add protection_type field
+        assert len(result) == len(v2_headers)
+        assert result[-1] == ""  # protection_type is empty
+
+    def test_default_migration_preserves_existing_data(self):
+        """Default migration should preserve existing field values."""
+        from app.migrations import _default_migration
+        v1_headers = get_fields_for_version(1)
+        v2_headers = get_fields_for_version(2)
+        ts = recent_timestamp()
+        row = [ts, "test-site", "test-site.example.com",
+               "DOWN", "500", "200", "http_error"]
+
+        result = _default_migration(row, v1_headers, v2_headers)
+
+        assert result[0] == ts
+        assert result[3] == "DOWN"
+        assert result[4] == "500"
+        assert result[6] == "http_error"
+
+
+class TestStorageMigrationErrors:
+    """Test Storage class error handling during migration."""
+
+    def test_read_domain_results_skips_rows_with_unknown_status(self, temp_storage):
+        """Rows with unparseable status should be skipped gracefully."""
+        domain_path = temp_storage._get_domain_path("bad-status", "bad-status.test.com")
+        domain_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(domain_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(get_fields_for_version(1))
+            ts1 = recent_timestamp()
+            ts2 = (datetime.now(timezone.utc) - timedelta(minutes=50)).isoformat()
+            writer.writerow([ts1, "bad-status",
+                           "bad-status.test.com", "UP", "200", "50", ""])  # Good row
+            writer.writerow([ts2, "bad-status",
+                           "bad-status.test.com", "UNKNOWN_STATUS_VALUE", "500", "100", ""])
+
+        results = temp_storage.read_domain_results("bad-status", "bad-status.test.com", hours=24)
+
+        # Unknown status maps to DomainStatus.UNKNOWN, not crash
+        assert len(results) == 2
+        assert results[0].domain_status == DomainStatus.UP
+        assert results[1].domain_status == DomainStatus.UNKNOWN
+
+    def test_read_domain_results_handles_corrupted_timestamp(self, temp_storage):
+        """Rows with corrupted timestamp should be filtered out by time window."""
+        domain_path = temp_storage._get_domain_path("bad-time", "bad-time.test.com")
+        domain_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(domain_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(get_fields_for_version(1))
+            # Good timestamp
+            ts1 = recent_timestamp()
+            # Corrupted timestamp that won't parse
+            writer.writerow([ts1, "bad-time",
+                           "bad-time.test.com", "UP", "200", "50", ""])
+            writer.writerow(["not-a-timestamp", "bad-time",
+                           "bad-time.test.com", "DOWN", "500", "100", ""])
+
+        results = temp_storage.read_domain_results("bad-time", "bad-time.test.com", hours=24)
+
+        # Only good row should be returned (corrupted row filtered by time)
+        assert len(results) == 1
+        assert results[0].domain_status == DomainStatus.UP
+
+    def test_detect_schema_version_handles_corrupted_version_comment(self, temp_storage):
+        """Corrupted version comment should default to v1."""
+        domain_path = temp_storage._get_domain_path("bad-version", "bad-version.test.com")
+        domain_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(domain_path, "w", newline="") as f:
+            # Write corrupted version comment
+            f.write("# version: not_a_number\n")
+            f.write(f"# schema: {','.join(get_fields_for_version(2))}\n")
+            writer = csv.writer(f)
+            writer.writerow(get_fields_for_version(2))
+            ts = recent_timestamp()
+            writer.writerow([ts, "bad-version",
+                           "bad-version.test.com", "UP", "200", "50", "", ""])
+
+        version, headers = temp_storage._detect_schema_version(domain_path)
+
+        # Should default to v1 for unreadable version
+        assert version == 1
+
+
 class TestModelToCSVRoundTrip:
     """Test that model data survives round-trip through CSV."""
 

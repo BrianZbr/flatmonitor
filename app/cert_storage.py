@@ -126,6 +126,9 @@ class CertStorage:
 
     def cleanup(self, max_age_days: int = 30) -> None:
         """Remove cert cache files older than max_age_days."""
+        if not self.certs_dir.exists():
+            return
+
         cutoff_time = time.time() - (max_age_days * 86400)
 
         for site_dir in self.certs_dir.iterdir():

@@ -488,8 +488,10 @@ Test individual components in isolation:
 - **config.py**: YAML loading, domain parsing, validation error handling
 - **runner.py**: Mock HTTP responses, status classification logic, timeout handling
 - **storage.py**: File operations, rotation logic, CSV format correctness
+- **cert_storage.py**: SSL certificate TTL caching, JSON metadata storage
 - **aggregator.py**: Bucket aggregation, forward-fill logic, site health determination
 - **renderer.py**: Template rendering, throttling logic, output generation
+- **schema_versions.py** + **migrations.py**: Version detection, migration paths, error handling for malformed rows/unknown versions
 
 ### Integration Tests
 Test component interactions:
