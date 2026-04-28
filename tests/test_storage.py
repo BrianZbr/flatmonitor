@@ -53,10 +53,13 @@ class TestStorage:
         domain_file = temp_storage.live_dir / "test" / "site.log"
         with open(domain_file, 'r') as f:
             reader = csv.reader(f)
+            # Skip version and schema comments
+            next(reader)  # # version: 2
+            next(reader)  # # schema: ...
             headers = next(reader)
             assert headers == [
                 "timestamp", "site_id", "domain_id", "domain_status",
-                "http_status", "latency_ms", "failure_type"
+                "http_status", "latency_ms", "failure_type", "protection_type"
             ]
 
     def test_append_csv_writes_data(self, temp_storage, sample_result):
@@ -65,6 +68,9 @@ class TestStorage:
         domain_file = temp_storage.live_dir / "test" / "site.log"
         with open(domain_file, 'r') as f:
             reader = csv.reader(f)
+            # Skip version and schema comments
+            next(reader)  # # version: 2
+            next(reader)  # # schema: ...
             next(reader)  # Skip headers
             row = next(reader)
             assert row[1] == "test"
@@ -88,6 +94,9 @@ class TestStorage:
         domain_file = temp_storage.live_dir / "test" / "site.log"
         with open(domain_file, 'r') as f:
             reader = csv.reader(f)
+            # Skip version and schema comments
+            next(reader)  # # version: 2
+            next(reader)  # # schema: ...
             next(reader)  # Skip headers
             rows = list(reader)
             assert len(rows) == 2
@@ -163,12 +172,12 @@ class TestStorage:
         archive_file = temp_storage.archive_dir / current_month / "test" / "site.log"
         assert archive_file.exists()
 
-        # Check live file was truncated (only headers remain)
+        # Check live file was truncated (version comments + headers remain)
         live_file = temp_storage.live_dir / "test" / "site.log"
         with open(live_file, 'r') as f:
             reader = csv.reader(f)
             rows = list(reader)
-            assert len(rows) == 1  # Only headers
+            assert len(rows) == 3  # version comment + schema comment + headers
 
     def test_cleanup_removes_old_archives(self, temp_storage):
         # Create old archive directory (older than retention period)
@@ -203,6 +212,7 @@ class TestStorage:
         temp_storage.rotate()
 
         # Second rotation - add more data
+        from datetime import timedelta
         result2 = Result(
             timestamp=(datetime.now(timezone.utc) + timedelta(minutes=1)).isoformat(),
             site_id="test",
@@ -210,7 +220,8 @@ class TestStorage:
             domain_status=DomainStatus.DOWN,
             http_status=500,
             latency_ms=200,
-            failure_type=FailureType.HTTP_ERROR
+            failure_type=FailureType.HTTP_ERROR,
+            protection_type=None
         )
         temp_storage.append_csv(result2)
         temp_storage.rotate()
@@ -221,8 +232,11 @@ class TestStorage:
             reader = csv.reader(f)
             rows = list(reader)
 
-        # Should have header + 2 data rows (not 1 header + 1 data from just second rotation)
-        assert len(rows) == 3, f"Expected 3 rows (1 header + 2 data), got {len(rows)}"
+        # Archive should have header + 2 data rows
+        # (When archiving to existing archive, only data rows are appended,
+        # version comments from live files are not preserved in archives)
+        assert len(rows) == 3, f"Expected 3 rows (header + 2 data), got {len(rows)}"
+
         assert rows[0][0] == "timestamp"  # Header
         assert rows[1][3] == "UP"  # First rotation data
         assert rows[2][3] == "DOWN"  # Second rotation data
@@ -257,10 +271,10 @@ class TestStorage:
             reader = csv.reader(f)
             rows = list(reader)
 
-        # First row should be headers
+        # Archive should have headers + data (version comments not preserved in archives)
         assert rows[0] == [
             "timestamp", "site_id", "domain_id", "domain_status",
-            "http_status", "latency_ms", "failure_type"
+            "http_status", "latency_ms", "failure_type", "protection_type"
         ]
         # Second row should be data
         assert rows[1][2] == "test.site"
@@ -292,9 +306,10 @@ class TestStorage:
                 reader = csv.reader(f)
                 rows = list(reader)
 
-            # Should still have header + data row (not truncated to just headers)
-            assert len(rows) == 2, f"Expected 2 rows (header + data), got {len(rows)}"
-            assert rows[1][3] == "UP"  # Data preserved
+            # Should still have version comment + schema comment + header + data row
+            # (not truncated to just comments + headers)
+            assert len(rows) == 4, f"Expected 4 rows (version + schema + header + data), got {len(rows)}"
+            assert rows[3][3] == "UP"  # Data preserved
         finally:
             # Restore permissions for cleanup
             site_archive_dir.chmod(0o755)
@@ -303,18 +318,21 @@ class TestStorage:
 
     def test_rotate_skips_empty_files(self, temp_storage):
         """Test that rotation skips files with no data rows."""
-        # Create a file with only headers (no data)
+        # Create a file with version comments and headers (no data rows)
+        # This simulates a file that was created but had all its data archived already
         live_file = temp_storage.live_dir / "test" / "site.log"
         live_file.parent.mkdir(parents=True, exist_ok=True)
         with open(live_file, 'w', newline='') as f:
+            f.write("# version: 2\n")
+            f.write("# schema: timestamp,site_id,domain_id,domain_status,http_status,latency_ms,failure_type,protection_type\n")
             writer = csv.writer(f)
             writer.writerow(["timestamp", "site_id", "domain_id", "domain_status",
-                           "http_status", "latency_ms", "failure_type"])
+                           "http_status", "latency_ms", "failure_type", "protection_type"])
 
         current_month = datetime.now(timezone.utc).strftime("%Y-%m")
         temp_storage.rotate()
 
-        # Archive should not exist (nothing to archive)
+        # Archive should not exist (nothing to archive - no data rows)
         archive_file = temp_storage.archive_dir / current_month / "test" / "site.log"
         assert not archive_file.exists()
 
@@ -323,7 +341,7 @@ class TestStorage:
         with open(live_file, 'r') as f:
             reader = csv.reader(f)
             rows = list(reader)
-        assert len(rows) == 1  # Just headers
+        assert len(rows) == 3  # version comment + schema comment + headers
 
     def test_rotate_atomic_write_prevents_corruption(self, temp_storage, sample_result):
         """Test that archive writes are atomic (temp file then rename)."""
@@ -356,7 +374,9 @@ class TestStorage:
             reader = csv.reader(f)
             rows = list(reader)
 
-        assert len(rows) == 3  # header + 2 data rows
+        # Archive should have header + 2 data rows
+        assert len(rows) == 3, f"Expected 3 rows (header + 2 data), got {len(rows)}"
+
         assert rows[1][3] == "UP"  # First data row intact
         assert rows[2][3] == "DOWN"  # Second data row intact
 

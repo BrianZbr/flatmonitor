@@ -98,6 +98,17 @@ class Result(BaseModel):
             protection_type=protection_type
         )
 
+    @classmethod
+    def get_csv_headers(cls) -> list:
+        """Return ordered list of CSV column headers matching to_csv_row() output."""
+        return ["timestamp", "site_id", "domain_id", "domain_status",
+                "http_status", "latency_ms", "failure_type", "protection_type"]
+
+    @classmethod
+    def get_csv_field_count(cls) -> int:
+        """Return expected number of CSV columns."""
+        return len(cls.get_csv_headers())
+
     def to_csv_row(self) -> list:
         """Convert to CSV row format."""
         return [
@@ -112,8 +123,57 @@ class Result(BaseModel):
         ]
 
     @classmethod
-    def from_csv_row(cls, row: list) -> "Result":
-        """Create from CSV row format."""
+    def from_csv_row(cls, row: list, headers: list = None) -> "Result":
+        """Create from CSV row format.
+
+        Args:
+            row: List of CSV field values
+            headers: Optional list of column headers. If provided, uses dict-based
+                    mapping for resilience to column order changes. If None, falls
+                    back to positional parsing for legacy compatibility.
+        """
+        if headers:
+            return cls._parse_with_headers(row, headers)
+        return cls._parse_positional(row)
+
+    @classmethod
+    def _parse_with_headers(cls, row: list, headers: list) -> "Result":
+        """Parse using header names for resilience to column order changes."""
+        # Create dict from row, handling rows shorter than headers
+        data = {}
+        for i, header in enumerate(headers):
+            data[header] = row[i] if i < len(row) else ""
+
+        # Parse failure_type with error handling
+        failure_type = None
+        failure_raw = data.get("failure_type", "")
+        if failure_raw:
+            try:
+                failure_type = FailureType(failure_raw)
+            except ValueError:
+                failure_type = FailureType.UNKNOWN
+
+        # Parse domain_status with fallback to UNKNOWN for empty/missing values
+        domain_status_str = data.get("domain_status", "")
+        try:
+            domain_status = DomainStatus(domain_status_str) if domain_status_str else DomainStatus.UNKNOWN
+        except ValueError:
+            domain_status = DomainStatus.UNKNOWN
+
+        return cls(
+            timestamp=data.get("timestamp", ""),
+            site_id=data.get("site_id", ""),
+            domain_id=data.get("domain_id", ""),
+            domain_status=domain_status,
+            http_status=int(data["http_status"]) if data.get("http_status") else None,
+            latency_ms=int(data["latency_ms"]) if data.get("latency_ms") else None,
+            failure_type=failure_type,
+            protection_type=data.get("protection_type") or None
+        )
+
+    @classmethod
+    def _parse_positional(cls, row: list) -> "Result":
+        """Parse using positional indices for legacy compatibility."""
         # Parse failure_type with backward compatibility for legacy string values
         failure_type = None
         if len(row) > 6 and row[6]:
@@ -127,12 +187,12 @@ class Result(BaseModel):
         protection_type = row[7] if len(row) > 7 and row[7] else None
 
         return cls(
-            timestamp=row[0],
-            site_id=row[1],
-            domain_id=row[2],
-            domain_status=DomainStatus(row[3]),
-            http_status=int(row[4]) if row[4] else None,
-            latency_ms=int(row[5]) if row[5] else None,
+            timestamp=row[0] if len(row) > 0 else "",
+            site_id=row[1] if len(row) > 1 else "",
+            domain_id=row[2] if len(row) > 2 else "",
+            domain_status=DomainStatus(row[3]) if len(row) > 3 else DomainStatus.UNKNOWN,
+            http_status=int(row[4]) if len(row) > 4 and row[4] else None,
+            latency_ms=int(row[5]) if len(row) > 5 and row[5] else None,
             failure_type=failure_type,
             protection_type=protection_type
         )

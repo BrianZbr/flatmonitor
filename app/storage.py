@@ -30,9 +30,9 @@ class Storage:
         self.live_dir.mkdir(parents=True, exist_ok=True)
         self.archive_dir.mkdir(parents=True, exist_ok=True)
 
-        # CSV headers
-        self.headers = ["timestamp", "site_id", "domain_id", "domain_status",
-                        "http_status", "latency_ms", "failure_type"]
+        # CSV headers - derived from Result model for consistency
+        self.headers = Result.get_csv_headers()
+        self.schema_version = 2  # Increment on breaking changes
 
     def append_csv(self, result: Result) -> None:
         """Append a result to the appropriate CSV file."""
@@ -45,6 +45,9 @@ class Storage:
         with open(domain_path, "a", newline="") as f:
             writer = csv.writer(f)
             if not file_exists:
+                # Write version comment and schema for future compatibility
+                f.write(f"# version: {self.schema_version}\n")
+                f.write(f"# schema: {','.join(self.headers)}\n")
                 writer.writerow(self.headers)
             writer.writerow(result.to_csv_row())
 
@@ -59,24 +62,36 @@ class Storage:
         results = []
         cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
 
+        # Detect schema version and extract headers
+        version, headers = self._detect_schema_version(domain_path)
+
         with open(domain_path, "r") as f:
             reader = csv.reader(f)
-            # Skip header
-            next(reader, None)
 
+            # Skip comment lines and header row
+            for row in reader:
+                if not row or row[0].startswith("#"):
+                    continue
+                # This is the header row - headers already extracted above
+                break
+
+            # Read data rows
             for row in reader:
                 if len(row) < 4:
                     continue
 
                 try:
-                    result = Result.from_csv_row(row)
+                    # Apply migrations if needed, then parse
+                    migrated_row = self._apply_migrations(row, version, headers)
+                    result = Result.from_csv_row(migrated_row, headers)
                     result_time = datetime.fromisoformat(
                         result.timestamp.replace("Z", "+00:00")
                     )
 
                     if result_time >= cutoff_time:
                         results.append(result)
-                except (ValueError, IndexError):
+                except (ValueError, IndexError) as e:
+                    logger.debug(f"Skipping malformed row in {domain_path}: {e}")
                     continue
 
         return results
@@ -129,15 +144,16 @@ class Storage:
 
                     # Only truncate if data was successfully archived
                     if rows_archived > 0:
-                        # Truncate the live file (keep only headers)
-                        with open(domain_file, "r") as f:
-                            reader = csv.reader(f)
-                            headers = next(reader, None)
+                        # Truncate the live file (keep version comments and headers)
+                        version, headers = self._detect_schema_version(domain_file)
 
                         with open(domain_file, "w", newline="") as f:
+                            # Write version comments back
+                            f.write(f"# version: {version}\n")
+                            f.write(f"# schema: {','.join(headers)}\n")
+                            # Write headers
                             writer = csv.writer(f)
-                            if headers:
-                                writer.writerow(headers)
+                            writer.writerow(headers)
                         rotated_count += 1
                         logger.debug(f"Rotated {domain_file.name}: {rows_archived} rows archived")
                     elif rows_archived == 0:
@@ -236,13 +252,19 @@ class Storage:
         if not rows:
             return 0
 
+        # Filter out comment rows (lines starting with #)
+        non_comment_rows = [row for row in rows if row and not row[0].startswith("#")]
+
+        if not non_comment_rows:
+            return 0
+
         # If live file has only headers (no data), nothing to append
-        if len(rows) == 1:
+        if len(non_comment_rows) == 1:
             return 0
 
         # If archive doesn't exist, keep header from live file
         # If archive exists, skip header from live file
-        data_rows = rows[1:] if archive_exists else rows
+        data_rows = non_comment_rows[1:] if archive_exists else non_comment_rows
 
         # Write to a temp file first for atomic operation
         temp_path = archive_path.with_suffix('.tmp')
@@ -267,6 +289,68 @@ class Storage:
             if temp_path.exists():
                 temp_path.unlink()
             raise e
+
+    def _detect_schema_version(self, domain_path: Path) -> tuple:
+        """Detect CSV schema version from file comments.
+
+        Returns:
+            tuple: (version: int, headers: list)
+                   version defaults to 1 if no version comment found
+                   headers defaults to Result.get_csv_headers() if no schema comment found
+        """
+        version = 1  # Default for legacy files without version comment
+        headers = Result.get_csv_headers()  # Default to current schema headers
+
+        try:
+            with open(domain_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line.startswith("#"):
+                        break
+                    if line.startswith("# version:"):
+                        try:
+                            version = int(line.split(":")[1].strip())
+                        except (ValueError, IndexError):
+                            pass
+                    elif line.startswith("# schema:"):
+                        try:
+                            schema_str = line.split(":", 1)[1].strip()
+                            headers = schema_str.split(",")
+                        except (ValueError, IndexError):
+                            pass
+        except Exception as e:
+            logger.debug(f"Could not detect schema version for {domain_path}: {e}")
+
+        return version, headers
+
+    def _apply_migrations(self, row: list, version: int, headers: list) -> list:
+        """Apply migrations to bring row to current schema version.
+
+        Args:
+            row: Raw CSV row data
+            version: Detected schema version of the file
+            headers: Headers from the file
+
+        Returns:
+            list: Migrated row matching current schema
+        """
+        if version >= self.schema_version:
+            return row  # No migration needed
+
+        # Import migrations here to avoid circular import
+        try:
+            from app.migrations import apply_migrations
+            return apply_migrations(row, version, self.schema_version, headers)
+        except ImportError:
+            # Migrations module not available yet - just pad/truncate row to match headers
+            logger.debug(f"Migrations module not available, padding row from v{version}")
+            return self._pad_row_to_headers(row, headers)
+
+    def _pad_row_to_headers(self, row: list, headers: list) -> list:
+        """Pad short rows with empty strings to match header count."""
+        if len(row) < len(headers):
+            return row + [""] * (len(headers) - len(row))
+        return row[:len(headers)]
 
     def _get_domain_path(self, site_id: str, domain_id: str) -> Path:
         """Get the file path for a domain's log file."""

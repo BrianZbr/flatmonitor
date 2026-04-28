@@ -703,3 +703,112 @@ The `CertStorage` class manages SSL certificate metadata separately from check r
   - Expiring soon (≤7 days): "Jan 15 (5d) ⚠" (yellow warning)
   - Expired: "Dec 1 (-10d) ✗ EXPIRED" (red X)
 - Dashboard reads from `CertStorage`, not CSV logs
+
+## 15. Schema Evolution & Versioning
+
+FlatMonitor uses a versioned CSV format to enable safe schema evolution without breaking existing data or requiring archive rewrites.
+
+### 15.1 CSV Format Specification
+
+New CSV files include version metadata as header comments:
+
+```csv
+# version: 2
+# schema: timestamp,site_id,domain_id,domain_status,http_status,latency_ms,failure_type,protection_type
+timestamp,site_id,domain_id,domain_status,http_status,latency_ms,failure_type,protection_type
+2025-01-15T10:30:00+00:00,site,domain,UP,200,45,,cloudflare
+```
+
+**Format Rules:**
+- Lines starting with `#` are metadata comments (not data rows)
+- `# version: N` indicates the schema version (integer)
+- `# schema: ...` lists the field names in column order
+- The first non-comment row is the CSV header row
+- All subsequent rows are data rows
+
+### 15.2 Schema Version History
+
+| Version | Fields | Description | Status |
+|---------|--------|-------------|--------|
+| 1 | 7 fields | Original schema (no `protection_type`) | Legacy |
+| 2 | 8 fields | Added `protection_type` for bot protection detection | Current |
+
+**Registry Location**: `app/schema_versions.py` - Centralized version definitions with field lists and metadata.
+
+### 15.3 Migration Strategy
+
+Migrations are applied **at read-time**, not by rewriting files. This approach:
+- Preserves archive file integrity
+- Avoids mass data migration during deployments
+- Allows mixed-version coexistence during rotation windows
+- Enables rollback without data conversion
+
+**Migration Flow:**
+1. File is opened for reading
+2. Schema version detected from comment headers (defaults to v1 if missing)
+3. File headers extracted for column mapping
+4. Each row read and migrated in-memory to current schema
+5. `Result.from_csv_row()` parses migrated row using header-aware parsing
+
+**Migration Registry**: `app/migrations.py` - Contains migration functions between consecutive versions.
+
+### 15.4 Adding New Fields (Developer Guide)
+
+To safely add a new field to the Result model:
+
+1. **Update the model** (`app/models.py`):
+   - Add field to `Result` class with `Field(...)` definition
+   - Update `get_csv_headers()` classmethod to include new field
+   - Update `to_csv_row()` to serialize the new field
+   - Update `_parse_with_headers()` to deserialize the new field
+
+2. **Create a new schema version** (`app/schema_versions.py`):
+   - Add entry to `CSV_SCHEMA_VERSIONS` with new field list
+   - Increment `CURRENT_SCHEMA_VERSION`
+   - Document the change in version description
+
+3. **Write migration function** (`app/migrations.py`):
+   - Create migration function from previous version
+   - Register in `MIGRATIONS` dict
+   - Set sensible defaults for legacy data (usually empty string → `None`)
+
+4. **Update Storage** (`app/storage.py`):
+   - Increment `self.schema_version` in `Storage.__init__`
+
+5. **Add tests** (`tests/test_schema_migration.py`):
+   - Test migration from previous version
+   - Test round-trip serialization
+   - Test legacy file compatibility
+
+6. **Deploy**: New code reads old files (via migrations), writes new format. Old code ignores new fields gracefully.
+
+### 15.5 Backward Compatibility Guarantees
+
+- **Legacy files without version comments** parse as v1 schema
+- **Extra columns** in old files are handled (padding with empty values)
+- **Unknown enum values** map to `UNKNOWN` (e.g., legacy `failure_type` strings)
+- **Missing protection_type** defaults to `None`
+- **Archive compatibility**: 7-day retention means archives may contain mixed versions during rotation windows; all versions remain readable
+
+### 15.6 Archive Compatibility During Rotation
+
+The rotation system (Section 6) preserves schema version comments when archiving:
+- Live files rotated to archive retain their original version headers
+- Mixed-version archives are automatically handled by version detection
+- No archive rewriting needed when schema changes
+
+### 15.7 Error Handling
+
+- **Parse errors for individual rows**: Row skipped, reader continues
+- **Unknown schema version**: Treated as v1 with current headers
+- **Migration failures**: Logged, row skipped gracefully
+- **Missing migrations module**: Falls back to default padding behavior
+
+### 15.8 Testing Requirements
+
+All schema changes must include tests verifying:
+- Old-format CSVs still parse correctly
+- Migration produces valid results
+- New files include version comments
+- Round-trip serialization preserves data
+- Malformed rows don't crash the reader
