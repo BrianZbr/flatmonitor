@@ -907,7 +907,7 @@
                 {% endfor %}
             </div>
             {% endif %}
-            <p>Generated at {{ generated_at }} | {{ title }}{% if instance_label %} | {{ instance_label }}{% endif %}</p>
+            <p>Generated at {{ generated_at }} | <a href="https://github.com/BrianZbr/flatmonitor" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none;">built with FlatMonitor</a>{% if instance_label %} | {{ instance_label }}{% endif %}</p>
         </div>
     </div>
     {% block extra_js %}{% endblock %}
@@ -950,11 +950,11 @@
             // Convert footer generation timestamp
             const footerTime = document.querySelector('.footer p');
             if (footerTime) {
-                const text = footerTime.textContent;
-                const match = text.match(/Generated at ([^|]+)/);
+                const html = footerTime.innerHTML;
+                const match = html.match(/Generated at ([^|]+)/);
                 if (match) {
                     const localTime = localizeTimestamp(match[1].trim());
-                    footerTime.textContent = text.replace(match[1], ' ' + localTime + ' ');
+                    footerTime.innerHTML = html.replace(match[1], ' ' + localTime + ' ');
                 }
             }
 
