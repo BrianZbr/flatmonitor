@@ -17,7 +17,10 @@ __pycache__/
 data/
 
 # Generated HTML output and assets
-public/
+public/*
+!public/static/
+public/static/*
+!public/static/css/
 
 # User configuration (keep example)
 config/domains.yaml
