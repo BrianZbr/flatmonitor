@@ -948,6 +948,7 @@
             };
 
             // Convert footer generation timestamp
+            // WARNING: Use innerHTML not textContent to preserve footer links
             const footerTime = document.querySelector('.footer p');
             if (footerTime) {
                 const html = footerTime.innerHTML;
