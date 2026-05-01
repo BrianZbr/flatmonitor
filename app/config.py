@@ -75,7 +75,18 @@ class ConfigLoader:
             raise FileNotFoundError(f"Configuration file not found: {self.config_path}")
 
         with open(self.config_path, "r") as f:
-            self.config_data = yaml.safe_load(f)
+            try:
+                self.config_data = yaml.safe_load(f)
+            except yaml.YAMLError as e:
+                error_msg = f"YAML syntax error in {self.config_path}\n"
+                if hasattr(e, 'problem_mark'):
+                    mark = e.problem_mark
+                    error_msg += f"  Error at line {mark.line + 1}, column {mark.column + 1}\n"
+                    error_msg += f"  {e.problem}\n"
+                    error_msg += f"  Hint: Check indentation and ensure list items use consistent '- ' syntax"
+                else:
+                    error_msg += str(e)
+                raise ValueError(error_msg) from e
 
         if not self.config_data or "domains" not in self.config_data:
             raise ValueError("Configuration must contain a 'domains' key")
