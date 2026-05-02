@@ -18,7 +18,7 @@
     </p>
 </header>
 
-{% for domain in domains %}
+{%- for domain in domains %}
 <div class="card" id="{{ domain.id }}">
     <div class="card-header">
         <div class="domain-info">
@@ -86,24 +86,24 @@
                 <div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #21262d; color: #f7dc6f; font-size: 0.75rem;">
                     <strong>DEGRADED:</strong> 1 check failed.
                     {% set ns = namespace(found=false) %}
-                    {% for span in domain.timeline %}
+                    {%- for span in domain.timeline %}
                     {% if not ns.found and span.status.value in ('DOWN', 'TIMEOUT') %}
                     {% set ns.found = true %}
                     <br><span style="color: #da3633;">Latest: {{ span.time }} | {{ span.status.value }}{% if span.http_status %} | HTTP {{ span.http_status }}{% endif %}{% if span.failure_type %} | {{ span.failure_type }}{% endif %}</span>
                     {% endif %}
-                    {% endfor %}
+                    {%- endfor %}
                 </div>
                 {% endif %}
                 {% if domain.status.value == 'DOWN' %}
                 <div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #21262d; color: #da3633; font-size: 0.75rem;">
                     <strong>DOWN:</strong> 2+ checks failed.
                     {% set ns2 = namespace(found=false) %}
-                    {% for span in domain.timeline %}
+                    {%- for span in domain.timeline %}
                     {% if not ns2.found and span.status.value in ('DOWN', 'TIMEOUT') %}
                     {% set ns2.found = true %}
                     <br><span>Latest: {{ span.time }} | {{ span.status.value }}{% if span.http_status %} | HTTP {{ span.http_status }}{% endif %}{% if span.failure_type %} | {{ span.failure_type }}{% endif %}</span>
                     {% endif %}
-                    {% endfor %}
+                    {%- endfor %}
                 </div>
                 {% endif %}
                 <div style="margin-top: 0.5rem;">Cert: {% if domain.last_check.cert_expiry %}{{ domain.last_check.cert_expiry|format_cert_expiry }}{% else %}N/A{% endif %}</div>
@@ -115,10 +115,10 @@
     </div>
 
     <div class="timeline" data-log-path="{{ domain.log_path }}">
-        {% for span in domain.timeline %}
+        {%- for span in domain.timeline %}
         {% set tooltip = span.time ~ ' - ' ~ span.status.value ~ (' | HTTP ' ~ span.http_status if span.http_status else '') ~ (' | ' ~ span.latency_ms ~ 'ms' if span.latency_ms else '') ~ (' | ' ~ span.failure_type if span.failure_type else '') %}
         <span class="{{ span.class }}" data-timestamp="{{ span.iso_time }}" data-status="{{ span.status.value }}" data-http-status="{{ span.http_status or '' }}" data-latency="{{ span.latency_ms or '' }}" data-failure="{{ span.failure_type or '' }}" title="{{ tooltip }}"></span>
-        {% endfor %}
+        {%- endfor %}
     </div>
 
     {% if domain.status.value == 'PROTECTED' %}
@@ -133,7 +133,7 @@
     </div>
     {% endif %}
 </div>
-{% endfor %}
+{%- endfor %}
 
 {% include '_legend.html' %}
 

@@ -63,6 +63,11 @@ class StorageBackend(ABC):
         """Upload static assets (images, etc.) from assets_dir to storage."""
         pass
 
+    @abstractmethod
+    def upload_static(self, static_dir: Path) -> None:
+        """Upload static files (CSS, JS) from static_dir to storage."""
+        pass
+
 
 class FilesystemBackend(StorageBackend):
     """Default filesystem storage backend."""
@@ -102,6 +107,10 @@ class FilesystemBackend(StorageBackend):
 
     def upload_assets(self, assets_dir: Path) -> None:
         """No-op for filesystem backend - assets are already local."""
+        pass
+
+    def upload_static(self, static_dir: Path) -> None:
+        """No-op for filesystem backend - static files are already local."""
         pass
 
 
@@ -395,6 +404,66 @@ class R2Backend(StorageBackend):
 
         logger.info(f"Asset upload complete: {uploaded_count} uploaded, {skipped_count} skipped, {file_count} files scanned")
 
+    def upload_static(self, static_dir: Path) -> None:
+        """Upload static files (CSS, JS) from static_dir to R2 storage."""
+        import logging
+        import mimetypes
+        logger = logging.getLogger(__name__)
+
+        if not static_dir.exists():
+            logger.warning(f"Static directory does not exist: {static_dir}")
+            return
+
+        uploaded_count = 0
+        skipped_count = 0
+
+        for static_file in static_dir.rglob("*"):
+            if not static_file.is_file():
+                continue
+
+            try:
+                with open(static_file, "rb") as f:
+                    content = f.read()
+
+                if not content:
+                    continue
+
+                # Calculate relative path from static_dir root
+                rel_path = static_file.relative_to(static_dir)
+                key = f"static/{rel_path}"
+
+                content_hash = hashlib.sha256(content).hexdigest()
+                cache_key = f"static:{key}"
+                if cache_key in self._content_cache:
+                    if self._content_cache[cache_key] == content_hash:
+                        skipped_count += 1
+                        continue
+
+                content_type, _ = mimetypes.guess_type(str(static_file))
+                if not content_type:
+                    content_type = "application/octet-stream"
+
+                self.s3_client.put_object(
+                    Bucket=self.bucket_name,
+                    Key=key,
+                    Body=content,
+                    ContentType=content_type,
+                    CacheControl="max-age=3600, public",
+                    Metadata={
+                        "flatmonitor-generated": datetime.now(timezone.utc).isoformat(),
+                        "content-hash": content_hash
+                    }
+                )
+
+                self._content_cache[cache_key] = content_hash
+                uploaded_count += 1
+                logger.info(f"Static file uploaded: {key}")
+
+            except Exception as e:
+                logger.error(f"Failed to upload static file {static_file}: {e}")
+
+        logger.info(f"Static upload complete: {uploaded_count} uploaded, {skipped_count} skipped")
+
 
 class S3Backend(R2Backend):
     """
@@ -495,6 +564,10 @@ class MultiStorageBackend(StorageBackend):
     def upload_assets(self, assets_dir: Path) -> None:
         """Upload assets to primary backend."""
         self.primary.upload_assets(assets_dir)
+
+    def upload_static(self, static_dir: Path) -> None:
+        """Upload static files to primary backend."""
+        self.primary.upload_static(static_dir)
 
 
 def create_storage_backend(config: dict) -> StorageBackend:

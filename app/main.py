@@ -217,6 +217,10 @@ class FlatMonitor:
                         logger.info(f"Uploading assets from {assets_path} (exists: {assets_path.exists()})")
                         storage_backend.upload_assets(assets_path)
 
+                        static_path = Path(self.output_dir) / "static"
+                        logger.info(f"Uploading static files from {static_path} (exists: {static_path.exists()})")
+                        storage_backend.upload_static(static_path)
+
                     new_data = False
                     logger.info("Dashboard rebuilt")
 

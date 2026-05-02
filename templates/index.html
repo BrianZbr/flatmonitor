@@ -52,7 +52,7 @@
 
         <!-- Dense Domain List -->
         <ul class="domain-list-dense">
-            {% for domain in site.domains %}
+            {%- for domain in site.domains %}
             <li class="domain-item-dense">
                 <div class="domain-left-group">
                     {% if not domain.link_disabled %}
@@ -64,9 +64,9 @@
                     {% endif %}
 
                     <div class="mini-timeline-inline">
-                        {% for span in domain.timeline %}
+                        {%- for span in domain.timeline %}
                         <span class="{{ span.class }}"></span>
-                        {% endfor %}
+                        {%- endfor %}
                     </div>
                 </div>
 
@@ -79,7 +79,7 @@
                     {% endif %}
                 </div>
             </li>
-            {% endfor %}
+            {%- endfor %}
         </ul>
     </div>
     {% endfor %}
