@@ -152,6 +152,18 @@ class TestMultiStorageBackend:
         primary.upload_logs.assert_called_once_with(data_dir)
         secondary.upload_logs.assert_called_once_with(data_dir)
 
+    def test_upload_static_calls_primary(self):
+        """Test that upload_static delegates to primary backend."""
+        primary = Mock(spec=FilesystemBackend)
+        secondary = Mock(spec=FilesystemBackend)
+
+        multi = MultiStorageBackend(primary, secondary)
+        static_dir = Path("/fake/static")
+        multi.upload_static(static_dir)
+
+        primary.upload_static.assert_called_once_with(static_dir)
+        secondary.upload_static.assert_not_called()  # Only primary serves public URLs
+
 
 @pytest.mark.unit
 class TestCredentialHandling:

@@ -806,3 +806,60 @@ class TestRenderer:
             assert "✓" in content
         finally:
             shutil.rmtree(temp_dir)
+
+    def test_domain_name_not_split_on_dots(self):
+        """Test that domain IDs like 'test.example.com' are not incorrectly split.
+        
+        Regression test: Previously 'test.example.com' was split to 'example.com' causing
+        log URL mismatch (logs/test/example.com.log vs logs/test/test.example.com.log).
+        """
+        temp_dir = tempfile.mkdtemp()
+        try:
+            from unittest.mock import Mock
+            now = datetime.now(timezone.utc)
+            
+            # Mock storage that tracks what domain name was requested
+            mock_storage = Mock()
+            mock_storage.get_log_public_url.return_value = "https://r2.dev/logs/test/test.example.com.log"
+            mock_storage.get_archive_log_public_url.return_value = "https://r2.dev/logs/archive/2024-01/test/test.example.com.log"
+            
+            data = {
+                "sites": {
+                    "test": {
+                        "health": SiteHealth.UP,
+                        "domains": {
+                            "test.example.com": {  # Domain ID with dots
+                                "status": DomainStatus.UP,
+                                "url": "https://example.com",
+                                "link_disabled": False,
+                                "last_check": {
+                                    "timestamp": now.isoformat(),
+                                    "http_status": 200,
+                                    "latency_ms": 100
+                                }
+                            }
+                        },
+                        "buckets": {"test.example.com": [Bucket(now, DomainStatus.UP)]},
+                        "bucket_count": 48,
+                        "last_check": now.isoformat()
+                    }
+                },
+                "generated_at": now.isoformat()
+            }
+            
+            renderer = Renderer(
+                templates_dir="templates",
+                output_dir=temp_dir,
+                storage_backend=mock_storage
+            )
+            renderer.build_static_site(data)
+            
+            # Verify storage.get_log_public_url was called with correct domain name
+            mock_storage.get_log_public_url.assert_called_once_with("test", "test.example.com")
+            # NOT called with just "example.com" (the old buggy behavior)
+            for call in mock_storage.get_log_public_url.call_args_list:
+                args, _ = call
+                assert args[1] == "test.example.com", f"Expected 'test.example.com' but got '{args[1]}'"
+                
+        finally:
+            shutil.rmtree(temp_dir)
