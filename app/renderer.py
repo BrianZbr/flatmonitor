@@ -187,7 +187,8 @@ class Renderer:
             for domain_id, domain_info in site_data["domains"].items():
                 buckets = site_data["buckets"].get(domain_id, [])
                 timeline = self._buckets_to_timeline(buckets)
-                domain_name = domain_id.split(".", 1)[1] if "." in domain_id else domain_id
+                # domain_id is already the correct identifier (e.g., "example.com")
+                domain_name = domain_id
 
                 if use_relative_paths:
                     # Use relative paths for local filesystem access
