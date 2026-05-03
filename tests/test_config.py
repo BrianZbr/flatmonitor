@@ -404,6 +404,7 @@ class TestExpandEnvVars:
         monkeypatch.setenv("FLATMONITOR_R2_ACCESS_KEY_ID", "test-key")
         monkeypatch.setenv("FLATMONITOR_R2_SECRET_ACCESS_KEY", "test-secret")
         monkeypatch.setenv("FLATMONITOR_R2_BUCKET_NAME", "test-bucket")
+        monkeypatch.setenv("R2_PUBLIC_DOMAIN", "https://pub-123.r2.dev")
 
         yaml_content = """
 settings:
@@ -414,6 +415,7 @@ settings:
       access_key_id: "${FLATMONITOR_R2_ACCESS_KEY_ID}"
       secret_access_key: "${FLATMONITOR_R2_SECRET_ACCESS_KEY}"
       bucket_name: "${FLATMONITOR_R2_BUCKET_NAME}"
+      public_domain: "${R2_PUBLIC_DOMAIN}"
 
 domains:
   - id: test.site
@@ -430,5 +432,6 @@ domains:
             assert loader.storage.r2['access_key_id'] == "test-key"
             assert loader.storage.r2['secret_access_key'] == "test-secret"
             assert loader.storage.r2['bucket_name'] == "test-bucket"
+            assert loader.storage.r2['public_domain'] == "https://pub-123.r2.dev"
         finally:
             os.unlink(temp_path)

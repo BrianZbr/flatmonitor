@@ -202,7 +202,7 @@ class ConfigLoader:
                 'access_key_id': expand_env_vars(r2_raw.get('access_key_id', '${FLATMONITOR_R2_ACCESS_KEY_ID}')),
                 'secret_access_key': expand_env_vars(r2_raw.get('secret_access_key', '${FLATMONITOR_R2_SECRET_ACCESS_KEY}')),
                 'bucket_name': expand_env_vars(r2_raw.get('bucket_name', '${FLATMONITOR_R2_BUCKET_NAME}')),
-                'public_domain': r2_raw.get('public_domain'),
+                'public_domain': expand_env_vars(r2_raw.get('public_domain')) if r2_raw.get('public_domain') else None,
                 'endpoint_url': r2_raw.get('endpoint_url'),
                 'region': r2_raw.get('region', 'auto'),
                 'cache_max_age': r2_raw.get('cache_max_age', 60)
@@ -218,7 +218,7 @@ class ConfigLoader:
                 'bucket_name': expand_env_vars(s3_raw.get('bucket_name', '${FLATMONITOR_S3_BUCKET_NAME}')),
                 'region': s3_raw.get('region', 'us-east-1'),
                 'endpoint_url': s3_raw.get('endpoint_url'),
-                'public_domain': s3_raw.get('public_domain'),
+                'public_domain': expand_env_vars(s3_raw.get('public_domain')) if s3_raw.get('public_domain') else None,
                 'cache_max_age': s3_raw.get('cache_max_age', 60)
             }
 
