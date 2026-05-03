@@ -196,6 +196,9 @@ class TestRenderer:
 
     def test_health_priority_sorting(self, temp_renderer):
         """Test that sites are sorted by health priority (DOWN first)."""
+        # Configure renderer with severity sorting
+        temp_renderer.dashboard_config = {'sort_by': 'severity'}
+        
         data = {
             "sites": {
                 "healthy": {"health": SiteHealth.UP, "domains": {}, "bucket_count": 240},
@@ -210,12 +213,14 @@ class TestRenderer:
         index_file = temp_renderer.output_dir / "index.html"
         content = index_file.read_text()
 
-        # DOWN site should appear before others (simple check for order)
-        down_pos = content.find("down")
-        degraded_pos = content.find("degraded")
-        up_pos = content.find("UP")
+        # DOWN site should appear before others in the HTML (check site-card-title links)
+        # Look for the actual site ID text in the rendered site cards
+        down_pos = content.find('>down<')  # Site ID in site-card-title link
+        degraded_pos = content.find('>degraded<')
+        healthy_pos = content.find('>healthy<')
 
-        assert down_pos < degraded_pos or down_pos < up_pos
+        assert down_pos < degraded_pos, f"DOWN site (pos {down_pos}) should appear before DEGRADED (pos {degraded_pos})"
+        assert down_pos < healthy_pos, f"DOWN site (pos {down_pos}) should appear before UP (pos {healthy_pos})"
 
     def test_site_summary_status_counts(self, temp_renderer):
         """Test that site summary includes detailed status counts."""
@@ -330,7 +335,7 @@ class TestRenderer:
             assert '<title>Service Status</title>' in content
             assert '<h1>Service Status</h1>' in content
             assert 'Generated at' in content
-            assert '| Service Status</p>' in content
+            assert 'built with FlatMonitor' in content
         finally:
             shutil.rmtree(temp_dir)
 

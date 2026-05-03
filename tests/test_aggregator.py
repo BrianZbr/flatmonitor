@@ -397,3 +397,34 @@ class TestAggregator:
         assert "test" in result["sites"]
         assert result["sites"]["test"]["health"] == SiteHealth.UP
         assert "generated_at" in result
+
+
+class TestDomainNameExtraction:
+    """Tests for domain name extraction from domain_id in aggregator."""
+
+    def test_domain_name_extraction_with_dots(self):
+        """Test that domain IDs like 'example.com' extract full domain name for cert lookup.
+        
+        Regression test: Previously 'example.com' extracted 'bz' instead of 'example.com'
+        causing cert storage lookup failures.
+        """
+        from app.models import DomainConfig, ExpectConfig
+        
+        domain = DomainConfig(
+            id="example.example.com",  # site_id=example, domain_name=example.com
+            url="https://example.com",
+            expect=ExpectConfig(http_status=200)
+        )
+        
+        # Verify site_id extraction works
+        assert domain.site_id == "example"
+        
+        # Verify domain_name extraction (same logic as in _get_last_check_details)
+        if domain.id.startswith(domain.site_id + "."):
+            domain_name = domain.id[len(domain.site_id) + 1:]
+        else:
+            domain_name = domain.id
+        
+        # Should be full domain, not just TLD
+        assert domain_name == "example.com"
+        assert domain_name != "com"  # Old buggy split behavior

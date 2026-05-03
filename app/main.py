@@ -208,7 +208,13 @@ class FlatMonitor:
                     if self.config_loader.storage.upload_logs:
                         storage_backend = self.renderer.storage
                         data_path = Path(self.data_dir)
-                        storage_backend.upload_logs(data_path)
+                        result = storage_backend.upload_logs(data_path)
+                        if result['failed'] > 0:
+                            logger.warning(f"Log upload had {result['failed']} failures out of {result['total']} files")
+                        elif result['uploaded'] == 0 and result['total'] > 0:
+                            logger.warning(f"No logs uploaded (all {result['total']} files skipped or empty)")
+                        else:
+                            logger.info(f"Log upload complete: {result['uploaded']} uploaded, {result['skipped']} skipped, {result['failed']} failed")
 
                     # Upload assets if using cloud storage (R2/S3 backends)
                     if self.config_loader.storage.type in ('r2', 's3'):

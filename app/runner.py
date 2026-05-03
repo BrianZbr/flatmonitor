@@ -141,8 +141,11 @@ class Runner:
         start_time = time.time()
         timeout_seconds = domain.timeout
 
-        # Extract domain name for cert storage lookup
-        domain_name = domain.id.split(".", 1)[1] if "." in domain.id else domain.id
+        # Extract domain name for cert storage lookup (remove site_id prefix)
+        if domain.id.startswith(domain.site_id + "."):
+            domain_name = domain.id[len(domain.site_id) + 1:]
+        else:
+            domain_name = domain.id
 
         try:
             # Perform the request

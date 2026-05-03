@@ -51,12 +51,30 @@ Error handling uses `pydantic.ValidationError` for model validation issues. Othe
 - **retention_days**: How many days to keep archived data before deletion (default: 7). **Note**: Archives are stored indefinitely in `data/archive/`; retention only affects cleanup.
 
 ### DomainConfig
-- **id**: Unique identifier.
+- **id**: Unique identifier following format `{site_id}.{domain_name}`.
+  - **Format**: Must contain at least one dot separating site_id from domain_name
+  - **Examples**: `example.example.com` (site_id=example, domain_name=example.com), `acme.www.example.com`
+  - **Important**: The `domain_name` portion can contain dots (e.g., `example.com`). Extraction removes only the leading `site_id.` prefix.
 - **url**: The endpoint to check.
 - **interval_seconds**: Fixed at 60 seconds (1 minute) for timeline consistency.
 - **expect**: Optional. Defaults to `{http_status: 200}`.
   - **http_status**: Expected HTTP status code (default: 200).
   - **body_contains**: Optional string to validate in response body.
+
+#### Domain ID Extraction
+Components extract the domain name from the ID by removing the `site_id.` prefix:
+```python
+# Correct extraction (used in runner.py, aggregator.py, storage.py)
+if domain.id.startswith(domain.site_id + "."):
+    domain_name = domain.id[len(domain.site_id) + 1:]  # "example.com"
+else:
+    domain_name = domain.id
+
+# INCORRECT (old buggy pattern - do not use)
+domain_name = domain.id.split(".", 1)[1]  # Would return "com" for "example.example.com"
+```
+
+This ensures storage paths like `data/live/example/example.com.log` and `data/certs/example/example.com.json` use the full domain name.
 
 ### Result
 - **timestamp**: ISO UTC string.

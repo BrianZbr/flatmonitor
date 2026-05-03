@@ -44,8 +44,12 @@ class StorageBackend(ABC):
         pass
 
     @abstractmethod
-    def upload_logs(self, data_dir: Path) -> None:
-        """Upload log files from data/live/ to storage. Called after dashboard build."""
+    def upload_logs(self, data_dir: Path) -> dict:
+        """Upload log files from data/live/ to storage. Called after dashboard build.
+        
+        Returns:
+            dict with 'uploaded', 'skipped', 'failed', 'total' counts
+        """
         pass
 
     @abstractmethod
@@ -91,9 +95,13 @@ class FilesystemBackend(StorageBackend):
         output_path = self.output_dir / relative_path
         return str(output_path.resolve())
 
-    def upload_logs(self, data_dir: Path) -> None:
-        """No-op for filesystem backend - logs are already local."""
-        pass
+    def upload_logs(self, data_dir: Path) -> dict:
+        """No-op for filesystem backend - logs are already local.
+        
+        Returns:
+            Empty status dict since files are already local
+        """
+        return {'uploaded': 0, 'skipped': 0, 'failed': 0, 'total': 0}
 
     def get_log_public_url(self, site_id: str, domain_name: str) -> str:
         """Return relative URL path to log file from site page."""
@@ -218,15 +226,22 @@ class R2Backend(StorageBackend):
                 return False
             raise
 
-    def upload_logs(self, data_dir: Path) -> None:
-        """Upload log files from data/live/ to R2 storage."""
+    def upload_logs(self, data_dir: Path) -> dict:
+        """Upload log files from data/live/ to R2 storage.
+        
+        Returns:
+            dict with 'uploaded', 'skipped', 'failed', 'total' counts
+        """
         live_dir = data_dir / "live"
         if not live_dir.exists():
-            return
+            return {'uploaded': 0, 'skipped': 0, 'failed': 0, 'total': 0}
 
         import logging
         logger = logging.getLogger(__name__)
         uploaded_count = 0
+        skipped_count = 0
+        failed_count = 0
+        total_count = 0
 
         for site_dir in live_dir.iterdir():
             if not site_dir.is_dir():
@@ -234,6 +249,7 @@ class R2Backend(StorageBackend):
 
             site_id = site_dir.name
             for log_file in site_dir.glob("*.log"):
+                total_count += 1
                 try:
                     # Read log file content
                     with open(log_file, "rb") as f:
@@ -253,6 +269,7 @@ class R2Backend(StorageBackend):
                     cache_key = f"log:{key}"
                     if cache_key in self._content_cache:
                         if self._content_cache[cache_key] == content_hash:
+                            skipped_count += 1
                             continue  # Skip unchanged files
 
                     # Upload to R2
@@ -271,8 +288,10 @@ class R2Backend(StorageBackend):
                     # Update cache
                     self._content_cache[cache_key] = content_hash
                     uploaded_count += 1
+                    logger.info(f"Uploaded log: {key}")
 
                 except Exception as e:
+                    failed_count += 1
                     logger.warning(f"Failed to upload log {log_file}: {e}")
 
         # Upload archived logs
@@ -287,6 +306,7 @@ class R2Backend(StorageBackend):
                         continue
                     site_id = site_dir.name
                     for log_file in site_dir.glob("*.log"):
+                        total_count += 1
                         try:
                             with open(log_file, "rb") as f:
                                 content = f.read()
@@ -298,6 +318,7 @@ class R2Backend(StorageBackend):
                             cache_key = f"log:{key}"
                             if cache_key in self._content_cache:
                                 if self._content_cache[cache_key] == content_hash:
+                                    skipped_count += 1
                                     continue
                             self.s3_client.put_object(
                                 Bucket=self.bucket_name,
@@ -313,11 +334,13 @@ class R2Backend(StorageBackend):
                             )
                             self._content_cache[cache_key] = content_hash
                             uploaded_count += 1
+                            logger.info(f"Uploaded archive log: {key}")
                         except Exception as e:
+                            failed_count += 1
                             logger.warning(f"Failed to upload archive {log_file}: {e}")
 
-        if uploaded_count > 0:
-            logger.info(f"Uploaded {uploaded_count} log files to R2")
+        logger.info(f"Log upload complete: {uploaded_count} uploaded, {skipped_count} skipped, {failed_count} failed (total: {total_count})")
+        return {'uploaded': uploaded_count, 'skipped': skipped_count, 'failed': failed_count, 'total': total_count}
 
     def get_log_public_url(self, site_id: str, domain_name: str) -> str:
         """Get the public URL for a log file in R2."""
@@ -546,12 +569,24 @@ class MultiStorageBackend(StorageBackend):
         """Get public URL from primary backend."""
         return self.primary.get_public_url(relative_path)
 
-    def upload_logs(self, data_dir: Path) -> None:
-        """Upload logs to primary, optionally to secondary if it's not filesystem."""
-        self.primary.upload_logs(data_dir)
+    def upload_logs(self, data_dir: Path) -> dict:
+        """Upload logs to primary, optionally to secondary if it's not filesystem.
+        
+        Returns:
+            Combined status dict from primary (and secondary if applicable)
+        """
+        primary_result = self.primary.upload_logs(data_dir)
         # Only upload to secondary if it's a cloud backend (filesystem already has logs locally)
         if not isinstance(self.secondary, FilesystemBackend):
-            self.secondary.upload_logs(data_dir)
+            secondary_result = self.secondary.upload_logs(data_dir)
+            # Combine results
+            return {
+                'uploaded': primary_result.get('uploaded', 0) + secondary_result.get('uploaded', 0),
+                'skipped': primary_result.get('skipped', 0) + secondary_result.get('skipped', 0),
+                'failed': primary_result.get('failed', 0) + secondary_result.get('failed', 0),
+                'total': primary_result.get('total', 0) + secondary_result.get('total', 0)
+            }
+        return primary_result
 
     def get_log_public_url(self, site_id: str, domain_name: str) -> str:
         """Get log URL from primary backend."""

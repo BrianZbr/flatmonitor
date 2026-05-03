@@ -141,16 +141,19 @@ class TestMultiStorageBackend:
 
     def test_upload_logs_calls_both_when_secondary_not_filesystem(self):
         primary = Mock(spec=FilesystemBackend)
+        primary.upload_logs.return_value = {'uploaded': 1, 'skipped': 0, 'failed': 0, 'total': 1}
         secondary = Mock(spec=FilesystemBackend)  # Mock as non-filesystem type
+        secondary.upload_logs.return_value = {'uploaded': 1, 'skipped': 0, 'failed': 0, 'total': 1}
         # Make isinstance check fail by setting different spec
         secondary.__class__ = Mock
 
         multi = MultiStorageBackend(primary, secondary)
         data_dir = Path("/fake/data")
-        multi.upload_logs(data_dir)
+        result = multi.upload_logs(data_dir)
 
         primary.upload_logs.assert_called_once_with(data_dir)
         secondary.upload_logs.assert_called_once_with(data_dir)
+        assert result['uploaded'] == 2  # Combined from both backends
 
     def test_upload_static_calls_primary(self):
         """Test that upload_static delegates to primary backend."""

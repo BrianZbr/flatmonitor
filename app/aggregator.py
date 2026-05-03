@@ -110,8 +110,11 @@ class Aggregator:
     def _get_last_check_details(self, results: List[Result],
                                 domain: DomainConfig) -> Dict:
         """Extract details from the most recent check result."""
-        # Get cert info from separate cert storage
-        domain_name = domain.id.split(".", 1)[1] if "." in domain.id else domain.id
+        # Get cert info from separate cert storage (remove site_id prefix)
+        if domain.id.startswith(domain.site_id + "."):
+            domain_name = domain.id[len(domain.site_id) + 1:]
+        else:
+            domain_name = domain.id
         cert_info = self.cert_storage.get_cert_info(domain.site_id, domain_name)
         cert_expiry = cert_info.get('cert_expiry') if cert_info else None
 

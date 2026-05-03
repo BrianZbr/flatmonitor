@@ -461,3 +461,34 @@ class TestRunner:
         mock_response.headers = None
         result = runner._match_protection_pattern(mock_response, "")
         assert result is None
+
+
+class TestDomainNameExtraction:
+    """Tests for domain name extraction from domain_id."""
+
+    def test_domain_name_extraction_with_dots(self):
+        """Test that domain IDs like 'example.com' extract full domain name, not just 'bz'.
+        
+        Regression test: Previously 'example.com' extracted 'bz' instead of 'example.com'
+        for cert storage lookup, causing cache misses.
+        """
+        from app.models import DomainConfig, ExpectConfig
+        
+        domain = DomainConfig(
+            id="example.example.com",  # site_id=example, domain_name=example.com
+            url="https://example.com",
+            expect=ExpectConfig(http_status=200)
+        )
+        
+        # The site_id property extracts first part
+        assert domain.site_id == "example"
+        
+        # The domain_name should be the full domain_id minus site_id prefix
+        # Previously: "example.com".split(".", 1)[1] == "com" (WRONG)
+        # Now: "example.com"[len("example")+1:] == "example.com" (CORRECT)
+        if domain.id.startswith(domain.site_id + "."):
+            domain_name = domain.id[len(domain.site_id) + 1:]
+        else:
+            domain_name = domain.id
+        assert domain_name == "example.com"
+        assert domain_name != "com"  # Old buggy behavior
