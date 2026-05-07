@@ -105,3 +105,26 @@ settings:
       secret_access_key: "${FLATMONITOR_R2_SECRET_ACCESS_KEY}"
       bucket_name: "${FLATMONITOR_R2_BUCKET_NAME}"
 ```
+
+### Local Testing with .env File
+
+For local development and testing, create a `.env` file from the example:
+
+```bash
+cp .env.example .env
+# Edit .env with your actual R2 credentials
+```
+
+**Docker Compose:** The `docker-compose.yml` is configured to automatically load environment variables from `.env`:
+
+```yaml
+env_file:
+  - .env
+```
+
+**Running without Docker:** If running directly (e.g., `python -m app.main`), you can either:
+- Export variables manually: `export FLATMONITOR_R2_ACCOUNT_ID=...`
+- Use a tool like `direnv` to auto-load `.env`
+- Source the file: `set -a && source .env && set +a`
+
+The `.env` file is gitignored and will not be committed to your repository.

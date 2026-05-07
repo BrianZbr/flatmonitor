@@ -40,3 +40,8 @@ Thumbs.db
 # Logs
 *.log
 nohup.out
+
+# Environment variables (local testing)
+.env
+.env.local
+.env.*.local

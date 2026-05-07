@@ -9,6 +9,8 @@ services:
       - ./config/domains.yaml:/app/config/domains.yaml:ro
       - ./data:/app/data
       - ./public:/app/public
+    env_file:
+      - .env
     environment:
       - FLATMONITOR_CONFIG=/app/config/domains.yaml
     # No ports needed - generates static files to ./public
