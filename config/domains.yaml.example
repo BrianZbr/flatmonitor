@@ -39,7 +39,7 @@
   #     access_key_id: "${FLATMONITOR_R2_ACCESS_KEY_ID}"  # From R2 API token
   #     secret_access_key: "${FLATMONITOR_R2_SECRET_ACCESS_KEY}"  # From R2 API token
   #     bucket_name: "${FLATMONITOR_R2_BUCKET_NAME}"      # e.g., "flatmonitor-dashboard"
-  #     public_domain: "https://status.yourdomain.com"  # Optional custom domain
+  #     public_domain: "${FLATMONITOR_R2_PUBLIC_DOMAIN}"  # Optional custom domain, e.g. "https://status.yourdomain.com"
   #     cache_max_age: 60  # Cache seconds (default: 60)
   #   # Local filesystem backup (enabled by default when using cloud storage)
   #   filesystem:
@@ -54,9 +54,9 @@
   #     access_key_id: "${FLATMONITOR_AWS_ACCESS_KEY_ID}"
   #     secret_access_key: "${FLATMONITOR_AWS_SECRET_ACCESS_KEY}"
   #     bucket_name: "${FLATMONITOR_S3_BUCKET_NAME}"
+  #     public_domain: "${FLATMONITOR_S3_PUBLIC_DOMAIN}"  # Optional custom domain, e.g. "https://status.yourdomain.com"
   #     region: "us-east-1"  # AWS region (ignored for S3-compatible services)
   #     endpoint_url: "https://s3.example.com"  # Optional, for S3-compatible services
-  #     public_domain: "https://status.yourdomain.com"  # Optional custom domain
   #   # Local filesystem backup (enabled by default when using cloud storage)
   #   filesystem:
   #     output_dir: "public"

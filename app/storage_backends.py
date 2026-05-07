@@ -648,22 +648,43 @@ def create_storage_backend(config: dict) -> StorageBackend:
         r2_config = config.get("r2", {})
 
         # Resolve environment variables
-        account_id = _resolve_env_var(r2_config.get("account_id", "${R2_ACCOUNT_ID}"))
-        access_key_id = _resolve_env_var(r2_config.get("access_key_id", "${R2_ACCESS_KEY_ID}"))
-        secret_access_key = _resolve_env_var(r2_config.get("secret_access_key", "${R2_SECRET_ACCESS_KEY}"))
-        bucket_name = _resolve_env_var(r2_config.get("bucket_name", "${R2_BUCKET_NAME}"))
+        account_id = _resolve_env_var(r2_config.get("account_id", "${FLATMONITOR_R2_ACCOUNT_ID}"))
+        access_key_id = _resolve_env_var(r2_config.get("access_key_id", "${FLATMONITOR_R2_ACCESS_KEY_ID}"))
+        secret_access_key = _resolve_env_var(r2_config.get("secret_access_key", "${FLATMONITOR_R2_SECRET_ACCESS_KEY}"))
+        bucket_name = _resolve_env_var(r2_config.get("bucket_name", "${FLATMONITOR_R2_BUCKET_NAME}"))
 
         if not all([account_id, access_key_id, secret_access_key, bucket_name]):
             missing = []
+            details = []
             if not account_id:
-                missing.append("account_id (R2_ACCOUNT_ID)")
+                missing.append("account_id")
+                val = r2_config.get('account_id', 'N/A')
+                details.append(f"  - account_id: '{val}' (set FLATMONITOR_R2_ACCOUNT_ID)")
             if not access_key_id:
-                missing.append("access_key_id (R2_ACCESS_KEY_ID)")
+                missing.append("access_key_id")
+                val = r2_config.get('access_key_id', 'N/A')
+                display_val = f"'{val[:8]}...'" if val else 'N/A'
+                details.append(f"  - access_key_id: {display_val} (set FLATMONITOR_R2_ACCESS_KEY_ID)")
             if not secret_access_key:
-                missing.append("secret_access_key (R2_SECRET_ACCESS_KEY)")
+                missing.append("secret_access_key")
+                val = r2_config.get('secret_access_key', 'N/A')
+                display_val = f"'{val[:8]}...'" if val else 'N/A'
+                details.append(f"  - secret_access_key: {display_val} (set FLATMONITOR_R2_SECRET_ACCESS_KEY)")
             if not bucket_name:
-                missing.append("bucket_name (R2_BUCKET_NAME)")
-            raise ValueError(f"Missing required R2 configuration: {', '.join(missing)}")
+                missing.append("bucket_name")
+                val = r2_config.get('bucket_name', 'N/A')
+                details.append(f"  - bucket_name: '{val}' (set FLATMONITOR_R2_BUCKET_NAME)")
+
+            error_msg = f"Missing required R2 configuration: {', '.join(missing)}\n\n"
+            error_msg += "Current values from config:\n"
+            error_msg += '\n'.join(details)
+            error_msg += "\n\nEnsure these environment variables are set:\n"
+            error_msg += "  export FLATMONITOR_R2_ACCOUNT_ID='your_account_id'\n"
+            error_msg += "  export FLATMONITOR_R2_ACCESS_KEY_ID='your_access_key'\n"
+            error_msg += "  export FLATMONITOR_R2_SECRET_ACCESS_KEY='your_secret_key'\n"
+            error_msg += "  export FLATMONITOR_R2_BUCKET_NAME='your_bucket'\n"
+            error_msg += "\nOr create a .env file and run: set -a && source .env && set +a"
+            raise ValueError(error_msg)
 
         r2_backend = R2Backend(
             account_id=account_id,
@@ -688,19 +709,37 @@ def create_storage_backend(config: dict) -> StorageBackend:
         s3_config = config.get("s3", {})
 
         # Resolve environment variables
-        access_key_id = _resolve_env_var(s3_config.get("access_key_id", "${AWS_ACCESS_KEY_ID}"))
-        secret_access_key = _resolve_env_var(s3_config.get("secret_access_key", "${AWS_SECRET_ACCESS_KEY}"))
-        bucket_name = _resolve_env_var(s3_config.get("bucket_name", "${S3_BUCKET_NAME}"))
+        access_key_id = _resolve_env_var(s3_config.get("access_key_id", "${FLATMONITOR_AWS_ACCESS_KEY_ID}"))
+        secret_access_key = _resolve_env_var(s3_config.get("secret_access_key", "${FLATMONITOR_AWS_SECRET_ACCESS_KEY}"))
+        bucket_name = _resolve_env_var(s3_config.get("bucket_name", "${FLATMONITOR_S3_BUCKET_NAME}"))
 
         if not all([access_key_id, secret_access_key, bucket_name]):
             missing = []
+            details = []
             if not access_key_id:
-                missing.append("access_key_id (AWS_ACCESS_KEY_ID)")
+                missing.append("access_key_id")
+                val = s3_config.get('access_key_id', 'N/A')
+                display_val = f"'{val[:8]}...'" if val else 'N/A'
+                details.append(f"  - access_key_id: {display_val} (set FLATMONITOR_AWS_ACCESS_KEY_ID)")
             if not secret_access_key:
-                missing.append("secret_access_key (AWS_SECRET_ACCESS_KEY)")
+                missing.append("secret_access_key")
+                val = s3_config.get('secret_access_key', 'N/A')
+                display_val = f"'{val[:8]}...'" if val else 'N/A'
+                details.append(f"  - secret_access_key: {display_val} (set FLATMONITOR_AWS_SECRET_ACCESS_KEY)")
             if not bucket_name:
-                missing.append("bucket_name (S3_BUCKET_NAME)")
-            raise ValueError(f"Missing required S3 configuration: {', '.join(missing)}")
+                missing.append("bucket_name")
+                val = s3_config.get('bucket_name', 'N/A')
+                details.append(f"  - bucket_name: '{val}' (set FLATMONITOR_S3_BUCKET_NAME)")
+
+            error_msg = f"Missing required S3 configuration: {', '.join(missing)}\n\n"
+            error_msg += "Current values from config:\n"
+            error_msg += '\n'.join(details)
+            error_msg += "\n\nEnsure these environment variables are set:\n"
+            error_msg += "  export FLATMONITOR_AWS_ACCESS_KEY_ID='your_access_key'\n"
+            error_msg += "  export FLATMONITOR_AWS_SECRET_ACCESS_KEY='your_secret_key'\n"
+            error_msg += "  export FLATMONITOR_S3_BUCKET_NAME='your_bucket'\n"
+            error_msg += "\nOr create a .env file and run: set -a && source .env && set +a"
+            raise ValueError(error_msg)
 
         s3_backend = S3Backend(
             access_key_id=access_key_id,

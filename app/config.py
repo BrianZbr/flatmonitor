@@ -15,22 +15,51 @@ from typing import Optional, List as ListType, Dict
 import re
 
 
-def expand_env_vars(value: str) -> str:
+def expand_env_vars(value: str, context: str = "") -> str:
     """Expand environment variables in ${VAR_NAME} syntax.
 
     Supports:
     - ${FLATMONITOR_VAR_NAME} -> reads env var FLATMONITOR_VAR_NAME
     - Plain strings pass through unchanged
+
+    Args:
+        value: String potentially containing ${VAR_NAME} patterns
+        context: Description of where this value came from (for error messages)
+
+    Returns:
+        Expanded string with env vars replaced
+
+    Raises:
+        ValueError: If an env var is not set and context indicates it's required
     """
     if not isinstance(value, str):
         return value
 
+    unresolved = []
+
     def replacer(match):
         var_name = match.group(1)
         env_value = os.getenv(var_name)
-        return env_value if env_value is not None else match.group(0)
+        if env_value is not None:
+            return env_value
+        else:
+            unresolved.append(var_name)
+            return match.group(0)  # Keep original ${VAR} if not found
 
-    return re.sub(r'\$\{([^}]+)\}', replacer, value)
+    result = re.sub(r'\$\{([^}]+)\}', replacer, value)
+
+    # Log warning if any env vars were unresolved
+    if unresolved:
+        import logging
+        logger = logging.getLogger(__name__)
+        vars_str = ", ".join(f"${{{v}}}" for v in unresolved)
+        msg = f"Unresolved environment variable(s) {vars_str}"
+        if context:
+            msg += f" in {context}"
+        msg += f" (value: '{value}' -> '{result}')"
+        logger.warning(msg)
+
+    return result
 
 
 class DashboardConfig(BaseModel):
@@ -198,11 +227,11 @@ class ConfigLoader:
         if 'r2' in storage_settings:
             r2_raw = storage_settings['r2']
             r2_config = {
-                'account_id': expand_env_vars(r2_raw.get('account_id', '${FLATMONITOR_R2_ACCOUNT_ID}')),
-                'access_key_id': expand_env_vars(r2_raw.get('access_key_id', '${FLATMONITOR_R2_ACCESS_KEY_ID}')),
-                'secret_access_key': expand_env_vars(r2_raw.get('secret_access_key', '${FLATMONITOR_R2_SECRET_ACCESS_KEY}')),
-                'bucket_name': expand_env_vars(r2_raw.get('bucket_name', '${FLATMONITOR_R2_BUCKET_NAME}')),
-                'public_domain': expand_env_vars(r2_raw.get('public_domain')) if r2_raw.get('public_domain') else None,
+                'account_id': expand_env_vars(r2_raw.get('account_id', '${FLATMONITOR_R2_ACCOUNT_ID}'), 'settings.storage.r2.account_id'),
+                'access_key_id': expand_env_vars(r2_raw.get('access_key_id', '${FLATMONITOR_R2_ACCESS_KEY_ID}'), 'settings.storage.r2.access_key_id'),
+                'secret_access_key': expand_env_vars(r2_raw.get('secret_access_key', '${FLATMONITOR_R2_SECRET_ACCESS_KEY}'), 'settings.storage.r2.secret_access_key'),
+                'bucket_name': expand_env_vars(r2_raw.get('bucket_name', '${FLATMONITOR_R2_BUCKET_NAME}'), 'settings.storage.r2.bucket_name'),
+                'public_domain': expand_env_vars(r2_raw.get('public_domain'), 'settings.storage.r2.public_domain') if r2_raw.get('public_domain') else None,
                 'endpoint_url': r2_raw.get('endpoint_url'),
                 'region': r2_raw.get('region', 'auto'),
                 'cache_max_age': r2_raw.get('cache_max_age', 60)
@@ -213,9 +242,9 @@ class ConfigLoader:
         if 's3' in storage_settings:
             s3_raw = storage_settings['s3']
             s3_config = {
-                'access_key_id': expand_env_vars(s3_raw.get('access_key_id', '${FLATMONITOR_AWS_ACCESS_KEY_ID}')),
-                'secret_access_key': expand_env_vars(s3_raw.get('secret_access_key', '${FLATMONITOR_AWS_SECRET_ACCESS_KEY}')),
-                'bucket_name': expand_env_vars(s3_raw.get('bucket_name', '${FLATMONITOR_S3_BUCKET_NAME}')),
+                'access_key_id': expand_env_vars(s3_raw.get('access_key_id', '${FLATMONITOR_AWS_ACCESS_KEY_ID}'), 'settings.storage.s3.access_key_id'),
+                'secret_access_key': expand_env_vars(s3_raw.get('secret_access_key', '${FLATMONITOR_AWS_SECRET_ACCESS_KEY}'), 'settings.storage.s3.secret_access_key'),
+                'bucket_name': expand_env_vars(s3_raw.get('bucket_name', '${FLATMONITOR_S3_BUCKET_NAME}'), 'settings.storage.s3.bucket_name'),
                 'region': s3_raw.get('region', 'us-east-1'),
                 'endpoint_url': s3_raw.get('endpoint_url'),
                 'public_domain': expand_env_vars(s3_raw.get('public_domain')) if s3_raw.get('public_domain') else None,
