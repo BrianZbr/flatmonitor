@@ -191,10 +191,13 @@ class Renderer:
                 domain_name = domain_id
 
                 if use_relative_paths:
-                    # Use relative paths for local filesystem access
-                    log_path = f"../data/live/{site_id}/{domain_name}.log"
+                    # Use relative paths - logs are served from same domain at /logs/
+                    # Note: HTML files are at root, so logs are at ./logs/ not ../logs/
+                    from app.models import get_log_filename
+                    log_name = get_log_filename(site_id, domain_id)
+                    log_path = f"logs/{site_id}/{log_name}.log"
                     archive_links = [
-                        {"date": month, "url": f"../data/archive/{month}/{site_id}/{domain_name}.log"}
+                        {"date": month, "url": f"logs/archive/{month}/{site_id}/{log_name}.log"}
                         for month in archive_dates
                     ]
                 else:
@@ -258,14 +261,13 @@ class Renderer:
         filename = f"{site_id}.html"
 
         if using_multi:
-            # Generate separate HTML for cloud (absolute URLs) and local (relative paths)
-            cloud_html = render_html(build_domains_data(use_relative_paths=False))
-            local_html = render_html(build_domains_data(use_relative_paths=True))
+            # Use relative paths for both versions since logs are served from same domain
+            # This avoids CORS issues when fetching logs via JavaScript
+            html = render_html(build_domains_data(use_relative_paths=True))
 
-            # Write cloud version to primary backend
-            cloud_url = self.storage.primary.write_file(filename, cloud_html, content_type="text/html")
-            # Write local version to secondary (filesystem) backend
-            self.storage.secondary.write_file(filename, local_html, content_type="text/html")
+            # Write to both backends
+            self.storage.primary.write_file(filename, html, content_type="text/html")
+            self.storage.secondary.write_file(filename, html, content_type="text/html")
         else:
             # Single backend - use its native URL format
             domains = build_domains_data(use_relative_paths=isinstance(self.storage, FilesystemBackend))

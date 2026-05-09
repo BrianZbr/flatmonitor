@@ -865,6 +865,146 @@ class TestRenderer:
             for call in mock_storage.get_log_public_url.call_args_list:
                 args, _ = call
                 assert args[1] == "test.example.com", f"Expected 'test.example.com' but got '{args[1]}'"
-                
+
         finally:
             shutil.rmtree(temp_dir)
+
+    def test_archive_links_rendered_as_valid_json_array(self):
+        """Test that archive_links are rendered as valid JSON array in onclick handler.
+
+        Regression test: Previously `| tojson | default("[]")` was used, which would
+        output `null` when archive_links was undefined, breaking the JS openLogModal function.
+        The correct order is `| default([]) | tojson` which outputs `[]` for undefined values.
+        """
+        from unittest.mock import Mock
+        now = datetime.now(timezone.utc)
+
+        # Mock storage returning empty archive dates (no archives)
+        mock_storage = Mock()
+        mock_storage.get_log_public_url.return_value = "https://r2.dev/logs/test/example.com.log"
+        mock_storage.get_archive_log_public_url.return_value = "https://r2.dev/logs/archive/2024-01/test/example.com.log"
+        # Capture the HTML content written by the renderer
+        written_content = {}
+        def capture_write(relative_path, content, content_type="text/html"):
+            written_content[relative_path] = content
+            return f"https://r2.dev/{relative_path}"
+        mock_storage.write_file.side_effect = capture_write
+
+        data = {
+            "sites": {
+                "test": {
+                    "health": SiteHealth.UP,
+                    "domains": {
+                        "example.com": {
+                            "status": DomainStatus.UP,
+                            "url": "https://example.com",
+                            "link_disabled": False,
+                            "last_check": {
+                                "timestamp": now.isoformat(),
+                                "http_status": 200,
+                                "latency_ms": 100
+                            }
+                        }
+                    },
+                    "buckets": {"example.com": [Bucket(now, DomainStatus.UP)]},
+                    "bucket_count": 48,
+                    "last_check": now.isoformat()
+                }
+            },
+            "generated_at": now.isoformat()
+        }
+
+        renderer = Renderer(
+            templates_dir="templates",
+            output_dir="/tmp/test",
+            storage_backend=mock_storage
+        )
+        renderer.build_static_site(data)
+
+        # Get the site HTML content from the mock
+        content = written_content.get("test.html", "")
+        assert content, "Site HTML content was not written"
+
+        # Find the onclick handler for openLogModal
+        import re
+        # Match the openLogModal call with 4th argument being a JSON array (not null)
+        pattern = r'openLogModal\([^)]*,\s*[^)]*,\s*[^)]*,\s*(\[[^]]*\])\)'
+        matches = re.findall(pattern, content)
+
+        # Should find at least one match with empty array [] (not null)
+        assert len(matches) > 0, "openLogModal calls with JSON array not found"
+        for match in matches:
+            assert match == "[]", f"Expected '[]' but got '{match}'"
+            # Verify it's valid JSON
+            import json
+            parsed = json.loads(match)
+            assert isinstance(parsed, list), f"Expected list but got {type(parsed)}"
+
+    def test_archive_links_with_archives_rendered_correctly(self):
+        """Test that archive_links with data are rendered correctly in the template."""
+        from unittest.mock import Mock, patch
+        now = datetime.now(timezone.utc)
+
+        mock_storage = Mock()
+        mock_storage.get_log_public_url.return_value = "https://r2.dev/logs/test/example.com.log"
+        mock_storage.get_archive_log_public_url.return_value = "https://r2.dev/logs/archive/2024-01/test/example.com.log"
+        # Capture the HTML content written by the renderer
+        written_content = {}
+        def capture_write(relative_path, content, content_type="text/html"):
+            written_content[relative_path] = content
+            return f"https://r2.dev/{relative_path}"
+        mock_storage.write_file.side_effect = capture_write
+
+        data = {
+            "sites": {
+                "test": {
+                    "health": SiteHealth.UP,
+                    "domains": {
+                        "example.com": {
+                            "status": DomainStatus.UP,
+                            "url": "https://example.com",
+                            "link_disabled": False,
+                            "last_check": {
+                                "timestamp": now.isoformat(),
+                                "http_status": 200,
+                                "latency_ms": 100
+                            }
+                        }
+                    },
+                    "buckets": {"example.com": [Bucket(now, DomainStatus.UP)]},
+                    "bucket_count": 48,
+                    "last_check": now.isoformat()
+                }
+            },
+            "generated_at": now.isoformat()
+        }
+
+        renderer = Renderer(
+            templates_dir="templates",
+            output_dir="/tmp/test",
+            storage_backend=mock_storage
+        )
+
+        # Patch _get_archive_dates to return some dates
+        with patch.object(renderer, '_get_archive_dates', return_value=['2024-01', '2023-12']):
+            renderer.build_static_site(data)
+
+        # Get the site HTML content from the mock
+        content = written_content.get("test.html", "")
+        assert content, "Site HTML content was not written"
+
+        # Find the onclick handler - should contain archive links JSON
+        import re
+        pattern = r'openLogModal\([^)]*,\s*[^)]*,\s*[^)]*,\s*(\[[^]]*\])\)'
+        matches = re.findall(pattern, content)
+
+        assert len(matches) > 0, "openLogModal calls with JSON array not found"
+        for match in matches:
+            # Verify it's valid JSON and contains archive data
+            import json
+            parsed = json.loads(match)
+            assert isinstance(parsed, list), f"Expected list but got {type(parsed)}"
+            # When archives exist, the list should have items with date and url
+            if len(parsed) > 0:
+                assert 'date' in parsed[0], "Archive link should have 'date' field"
+                assert 'url' in parsed[0], "Archive link should have 'url' field"

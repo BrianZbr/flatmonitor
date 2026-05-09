@@ -259,7 +259,8 @@ class R2Backend(StorageBackend):
                         continue
 
                     # Upload to R2 with path: logs/{site_id}/{domain_name}.log
-                    domain_name = log_file.stem
+                    from app.models import get_log_filename
+                    domain_name = get_log_filename(site_id, log_file.stem)
                     key = f"logs/{site_id}/{domain_name}.log"
 
                     # Calculate hash for deduplication
@@ -312,7 +313,8 @@ class R2Backend(StorageBackend):
                                 content = f.read()
                             if not content:
                                 continue
-                            domain_name = log_file.stem
+                            from app.models import get_log_filename
+                            domain_name = get_log_filename(site_id, log_file.stem)
                             key = f"logs/archive/{date}/{site_id}/{domain_name}.log"
                             content_hash = hashlib.sha256(content).hexdigest()
                             cache_key = f"log:{key}"
@@ -344,12 +346,14 @@ class R2Backend(StorageBackend):
 
     def get_log_public_url(self, site_id: str, domain_name: str) -> str:
         """Get the public URL for a log file in R2."""
-        key = f"logs/{site_id}/{domain_name}.log"
+        from app.models import get_log_filename
+        key = f"logs/{site_id}/{get_log_filename(site_id, domain_name)}.log"
         return self.get_public_url(key)
 
     def get_archive_log_public_url(self, site_id: str, domain_name: str, date: str) -> str:
         """Get the public URL for an archived log file in R2."""
-        key = f"logs/archive/{date}/{site_id}/{domain_name}.log"
+        from app.models import get_log_filename
+        key = f"logs/archive/{date}/{site_id}/{get_log_filename(site_id, domain_name)}.log"
         return self.get_public_url(key)
 
     def upload_assets(self, assets_dir: Path) -> None:

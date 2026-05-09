@@ -30,7 +30,7 @@
         </div>
         <div style="display: flex; align-items: center; gap: 0.75rem;">
             <div class="log-links">
-                <button class="log-link" onclick='openLogModal("{{ domain.id | e }}", "{{ domain.log_path | e }}", "{{ domain.url | replace("https://", "") | replace("http://", "") | e }}", {{ domain.archive_links | tojson | default("[]") }})' title="View recent logs">logs</button>
+                <button class="log-link" onclick='openLogModal("{{ domain.id | e }}", "{{ domain.log_path | e }}", "{{ domain.url | replace("https://", "") | replace("http://", "") | e }}", {{ domain.archive_links | default([]) | tojson }})' title="View recent logs">logs</button>
             </div>
             <span class="status-badge {{ domain.status.value|status_class }}">
                 {{ domain.status.value }}

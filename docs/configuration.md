@@ -86,7 +86,7 @@ Store sensitive credentials in environment variables instead of hardcoding them 
 | `FLATMONITOR_R2_ACCESS_KEY_ID` | R2 API token access key |
 | `FLATMONITOR_R2_SECRET_ACCESS_KEY` | R2 API token secret |
 | `FLATMONITOR_R2_BUCKET_NAME` | R2 bucket name |
-| `FLATMONITOR_R2_PUBLIC_DOMAIN` | Optional custom domain for public access |
+| `FLATMONITOR_R2_PUBLIC_DOMAIN` | Optional custom domain for public access (e.g., `https://status.yourdomain.com`). If unset, defaults to the R2.dev subdomain. |
 
 **AWS S3 / S3-Compatible:**
 | Variable | Description |
@@ -106,7 +106,7 @@ settings:
       access_key_id: "${FLATMONITOR_R2_ACCESS_KEY_ID}"
       secret_access_key: "${FLATMONITOR_R2_SECRET_ACCESS_KEY}"
       bucket_name: "${FLATMONITOR_R2_BUCKET_NAME}"
-      public_domain: "${FLATMONITOR_R2_PUBLIC_DOMAIN}"  # Optional
+      public_domain: "${FLATMONITOR_R2_PUBLIC_DOMAIN:-}"  # Optional, :- means empty default if unset
 ```
 
 ### Local Testing with .env File

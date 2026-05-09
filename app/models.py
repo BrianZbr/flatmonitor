@@ -10,6 +10,17 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 
 
+def get_log_filename(site_id: str, domain_id: str) -> str:
+    """Get the log filename (without path or extension) for a domain.
+
+    Strips the site_id prefix if present (e.g., 'example.com' -> 'bz').
+    This ensures consistent naming between disk storage, R2 uploads, and HTML links.
+    """
+    if domain_id.startswith(site_id + "."):
+        return domain_id[len(site_id) + 1:]
+    return domain_id
+
+
 class DomainStatus(str, Enum):
     """Status classification for check results."""
     UP = "UP"

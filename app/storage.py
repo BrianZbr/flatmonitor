@@ -354,10 +354,5 @@ class Storage:
 
     def _get_domain_path(self, site_id: str, domain_id: str) -> Path:
         """Get the file path for a domain's log file."""
-        # Extract domain name from domain_id (remove site_id prefix)
-        if domain_id.startswith(site_id + "."):
-            domain_name = domain_id[len(site_id) + 1:]
-        else:
-            domain_name = domain_id
-
-        return self.live_dir / site_id / f"{domain_name}.log"
+        from app.models import get_log_filename
+        return self.live_dir / site_id / f"{get_log_filename(site_id, domain_id)}.log"

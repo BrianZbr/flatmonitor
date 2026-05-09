@@ -38,13 +38,23 @@ def expand_env_vars(value: str, context: str = "") -> str:
     unresolved = []
 
     def replacer(match):
-        var_name = match.group(1)
-        env_value = os.getenv(var_name)
-        if env_value is not None:
-            return env_value
+        var_spec = match.group(1)
+        # Support ${VAR:-default} syntax
+        if ':-' in var_spec:
+            var_name, default_value = var_spec.split(':-', 1)
+            env_value = os.getenv(var_name)
+            if env_value is not None:
+                return env_value
+            else:
+                return default_value
         else:
-            unresolved.append(var_name)
-            return match.group(0)  # Keep original ${VAR} if not found
+            var_name = var_spec
+            env_value = os.getenv(var_name)
+            if env_value is not None:
+                return env_value
+            else:
+                unresolved.append(var_name)
+                return match.group(0)  # Keep original ${VAR} if not found
 
     result = re.sub(r'\$\{([^}]+)\}', replacer, value)
 

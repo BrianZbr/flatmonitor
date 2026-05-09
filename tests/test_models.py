@@ -7,8 +7,31 @@ import pytest
 from datetime import datetime
 from app.models import (
     DomainConfig, Result, ExpectConfig,
-    DomainStatus, SiteHealth, FailureType
+    DomainStatus, SiteHealth, FailureType,
+    get_log_filename
 )
+
+
+class TestLogFilename:
+    """Tests for get_log_filename — single source of truth for log file naming.
+
+    Regression test: Previously storage.py, storage_backends.py, and renderer.py
+    each computed log filenames differently, causing the HTML to reference
+    'example.com.log' while R2 stored 'bz.log', breaking the logs modal.
+    """
+
+    def test_strips_site_prefix(self):
+        assert get_log_filename("example", "example.com") == "com"
+
+    def test_no_prefix_unchanged(self):
+        assert get_log_filename("other", "motw") == "motw"
+
+    def test_nested_subdomain(self):
+        assert get_log_filename("httpbin", "httpbin.get") == "get"
+
+    def test_site_id_with_dots(self):
+        """example.com site with example.com domain -> 'gl', not 'example.com'."""
+        assert get_log_filename("example.com", "example.com.org") == "org"
 
 
 class TestDomainStatus:
