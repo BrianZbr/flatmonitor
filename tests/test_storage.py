@@ -37,6 +37,19 @@ class TestStorage:
             failure_type=None
         )
 
+    @pytest.fixture
+    def old_sample_result(self):
+        """Result older than 5 hours so rotation will archive it."""
+        return Result(
+            timestamp=(datetime.now(timezone.utc) - timedelta(hours=6)).isoformat(),
+            site_id="test",
+            domain_id="test.site",
+            domain_status=DomainStatus.UP,
+            http_status=200,
+            latency_ms=100,
+            failure_type=None
+        )
+
     def test_directories_created(self, temp_storage):
         assert temp_storage.live_dir.exists()
         assert temp_storage.archive_dir.exists()
@@ -162,8 +175,8 @@ class TestStorage:
         results = temp_storage.read_site_results("nonexistent", hours=4)
         assert results == {}
 
-    def test_rotate_archives_files(self, temp_storage, sample_result):
-        temp_storage.append_csv(sample_result)
+    def test_rotate_archives_files(self, temp_storage, old_sample_result):
+        temp_storage.append_csv(old_sample_result)
 
         current_month = datetime.now(timezone.utc).strftime("%Y-%m")
         temp_storage.rotate()
@@ -203,18 +216,17 @@ class TestStorage:
 
         assert recent_archive.exists()
 
-    def test_rotate_appends_to_existing_archive(self, temp_storage, sample_result):
+    def test_rotate_appends_to_existing_archive(self, temp_storage, old_sample_result):
         """Test that rotation appends to archive instead of overwriting."""
         current_month = datetime.now(timezone.utc).strftime("%Y-%m")
 
-        # First rotation - initial data
-        temp_storage.append_csv(sample_result)
+        # First rotation - old data (will be archived)
+        temp_storage.append_csv(old_sample_result)
         temp_storage.rotate()
 
-        # Second rotation - add more data
-        from datetime import timedelta
+        # Second rotation - more old data
         result2 = Result(
-            timestamp=(datetime.now(timezone.utc) + timedelta(minutes=1)).isoformat(),
+            timestamp=(datetime.now(timezone.utc) - timedelta(hours=7)).isoformat(),
             site_id="test",
             domain_id="test.site",
             domain_status=DomainStatus.DOWN,
@@ -233,22 +245,20 @@ class TestStorage:
             rows = list(reader)
 
         # Archive should have header + 2 data rows
-        # (When archiving to existing archive, only data rows are appended,
-        # version comments from live files are not preserved in archives)
         assert len(rows) == 3, f"Expected 3 rows (header + 2 data), got {len(rows)}"
 
         assert rows[0][0] == "timestamp"  # Header
         assert rows[1][3] == "UP"  # First rotation data
         assert rows[2][3] == "DOWN"  # Second rotation data
 
-    def test_rotate_does_not_duplicate_headers(self, temp_storage, sample_result):
+    def test_rotate_does_not_duplicate_headers(self, temp_storage, old_sample_result):
         """Test that headers are not duplicated on multiple rotations."""
         current_month = datetime.now(timezone.utc).strftime("%Y-%m")
 
-        # Rotate twice
-        temp_storage.append_csv(sample_result)
+        # Rotate twice with old data
+        temp_storage.append_csv(old_sample_result)
         temp_storage.rotate()
-        temp_storage.rotate()  # Rotate again with empty live file
+        temp_storage.rotate()  # Second rotation with empty live file
 
         archive_file = temp_storage.archive_dir / current_month / "test" / "site.log"
         with open(archive_file, 'r') as f:
@@ -259,11 +269,11 @@ class TestStorage:
         header_count = sum(1 for row in rows if row[0] == "timestamp")
         assert header_count == 1, f"Expected 1 header row, found {header_count}"
 
-    def test_rotate_creates_archive_with_headers_if_not_exists(self, temp_storage, sample_result):
+    def test_rotate_creates_archive_with_headers_if_not_exists(self, temp_storage, old_sample_result):
         """Test that first rotation creates archive with headers."""
         current_month = datetime.now(timezone.utc).strftime("%Y-%m")
 
-        temp_storage.append_csv(sample_result)
+        temp_storage.append_csv(old_sample_result)
         temp_storage.rotate()
 
         archive_file = temp_storage.archive_dir / current_month / "test" / "site.log"
@@ -316,6 +326,27 @@ class TestStorage:
             if archive_file.exists():
                 archive_file.chmod(0o644)
 
+    def test_rotate_keeps_recent_data_in_live(self, temp_storage, sample_result):
+        """Regression test: rotation must keep last 5h of data for 4h aggregator."""
+        current_month = datetime.now(timezone.utc).strftime("%Y-%m")
+
+        # Add recent data (<5h old)
+        temp_storage.append_csv(sample_result)
+        temp_storage.rotate()
+
+        # Archive should NOT exist - data is too recent to archive
+        archive_file = temp_storage.archive_dir / current_month / "test" / "site.log"
+        assert not archive_file.exists()
+
+        # Live file should still have the data (not truncated)
+        live_file = temp_storage.live_dir / "test" / "site.log"
+        assert live_file.exists()
+        with open(live_file, 'r') as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+        # version comment + schema comment + header + data row
+        assert len(rows) == 4, f"Expected 4 rows (kept data), got {len(rows)}"
+
     def test_rotate_skips_empty_files(self, temp_storage):
         """Test that rotation skips files with no data rows."""
         # Create a file with version comments and headers (no data rows)
@@ -343,19 +374,19 @@ class TestStorage:
             rows = list(reader)
         assert len(rows) == 3  # version comment + schema comment + headers
 
-    def test_rotate_atomic_write_prevents_corruption(self, temp_storage, sample_result):
+    def test_rotate_atomic_write_prevents_corruption(self, temp_storage, old_sample_result):
         """Test that archive writes are atomic (temp file then rename)."""
         current_month = datetime.now(timezone.utc).strftime("%Y-%m")
 
-        # First rotation - create initial archive
-        temp_storage.append_csv(sample_result)
+        # First rotation - old data
+        temp_storage.append_csv(old_sample_result)
         temp_storage.rotate()
 
         archive_file = temp_storage.archive_dir / current_month / "test" / "site.log"
 
-        # Add more data and rotate again
+        # Add more old data and rotate again
         result2 = Result(
-            timestamp=(datetime.now(timezone.utc) + timedelta(minutes=1)).isoformat(),
+            timestamp=(datetime.now(timezone.utc) - timedelta(hours=7)).isoformat(),
             site_id="test",
             domain_id="test.site",
             domain_status=DomainStatus.DOWN,
@@ -464,9 +495,9 @@ class TestStorage:
             # Restore permissions for cleanup
             temp_storage.data_dir.chmod(0o755)
 
-    def test_rotate_updates_archive_index(self, temp_storage, sample_result):
+    def test_rotate_updates_archive_index(self, temp_storage, old_sample_result):
         """Test that rotate() calls update_archive_index for rotated sites."""
-        temp_storage.append_csv(sample_result)
+        temp_storage.append_csv(old_sample_result)
         current_month = datetime.now(timezone.utc).strftime("%Y-%m")
 
         temp_storage.rotate()

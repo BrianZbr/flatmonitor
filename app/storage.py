@@ -118,12 +118,18 @@ class Storage:
         """
         Rotate files from live to archive.
         Called every hour to archive current logs.
-        Only truncates live files after verifying data was successfully archived.
         Archives are organized by month (YYYY-MM) for easier historical analysis.
+
+        IMPORTANT: Keeps the last 5 hours of data in live files so the
+        4-hour aggregator always has enough data. Only archives rows
+        older than the retention window.
         """
         current_month = datetime.now(timezone.utc).strftime("%Y-%m")
         month_archive_dir = self.archive_dir / current_month
         month_archive_dir.mkdir(parents=True, exist_ok=True)
+
+        # Keep last 5 hours in live (aggregator reads 4h, +1h buffer)
+        keep_cutoff = datetime.now(timezone.utc) - timedelta(hours=5)
 
         rotated_count = 0
         error_count = 0
@@ -138,32 +144,20 @@ class Storage:
 
             for domain_file in site_dir.glob("*.log"):
                 try:
-                    # Append to archive (don't overwrite)
                     archive_path = site_archive_dir / domain_file.name
-                    rows_archived = self._append_to_archive(domain_file, archive_path)
+                    rows_archived = self._append_old_rows_to_archive(
+                        domain_file, archive_path, keep_cutoff
+                    )
 
-                    # Only truncate if data was successfully archived
                     if rows_archived > 0:
-                        # Truncate the live file (keep version comments and headers)
-                        version, headers = self._detect_schema_version(domain_file)
-
-                        with open(domain_file, "w", newline="") as f:
-                            # Write version comments back
-                            f.write(f"# version: {version}\n")
-                            f.write(f"# schema: {','.join(headers)}\n")
-                            # Write headers
-                            writer = csv.writer(f)
-                            writer.writerow(headers)
                         rotated_count += 1
-                        logger.debug(f"Rotated {domain_file.name}: {rows_archived} rows archived")
+                        logger.debug(f"Rotated {domain_file.name}: {rows_archived} old rows archived")
                     elif rows_archived == 0:
-                        # No data to archive, but file might have headers - safe to keep as-is
-                        logger.debug(f"Skipped {domain_file.name}: no data rows to archive")
+                        logger.debug(f"Skipped {domain_file.name}: no old rows to archive")
 
                 except Exception as e:
                     error_count += 1
                     logger.error(f"Failed to rotate {domain_file}: {e}")
-                    # Do NOT truncate on error - preserve live data
                     continue
 
         # Update archive index for any successfully rotated sites
@@ -230,6 +224,91 @@ class Storage:
                 json.dump(index, f, indent=2)
         except Exception as e:
             logger.error(f"Failed to write archive index: {e}")
+
+    def _append_old_rows_to_archive(self, live_file: Path, archive_path: Path,
+                                       keep_cutoff: datetime) -> int:
+        """
+        Archive rows older than keep_cutoff to archive, keep recent rows in live file.
+
+        Returns:
+            int: Number of old rows archived. 0 if no old rows or file missing.
+        """
+        if not live_file.exists():
+            return 0
+
+        version, headers = self._detect_schema_version(live_file)
+
+        with open(live_file, "r") as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+
+        if not rows:
+            return 0
+
+        # Filter out comment rows, keep header + data
+        non_comment_rows = [row for row in rows if row and not row[0].startswith("#")]
+
+        if len(non_comment_rows) <= 1:
+            return 0  # Only header, no data
+
+        header = non_comment_rows[0]
+        data_rows = non_comment_rows[1:]
+
+        # Split into old (to archive) and recent (to keep in live)
+        old_rows = []
+        recent_rows = []
+        timestamp_idx = header.index("timestamp") if "timestamp" in header else -1
+
+        for row in data_rows:
+            if timestamp_idx >= 0 and len(row) > timestamp_idx:
+                try:
+                    row_time = datetime.fromisoformat(
+                        row[timestamp_idx].replace("Z", "+00:00")
+                    )
+                    if row_time < keep_cutoff:
+                        old_rows.append(row)
+                    else:
+                        recent_rows.append(row)
+                except (ValueError, IndexError):
+                    # Can't parse timestamp, keep in live to be safe
+                    recent_rows.append(row)
+            else:
+                # No timestamp column, keep in live to be safe
+                recent_rows.append(row)
+
+        if not old_rows:
+            return 0
+
+        # Append old rows to archive
+        archive_exists = archive_path.exists()
+        rows_to_write = [header] + old_rows if not archive_exists else old_rows
+
+        temp_path = archive_path.with_suffix('.tmp')
+        try:
+            if archive_exists:
+                shutil.copy2(archive_path, temp_path)
+
+            with open(temp_path, "a", newline="") as f:
+                writer = csv.writer(f)
+                for row in rows_to_write:
+                    writer.writerow(row)
+
+            temp_path.rename(archive_path)
+        except Exception as e:
+            if temp_path.exists():
+                temp_path.unlink()
+            raise e
+
+        # Write back headers + recent rows to live file
+        with open(live_file, "w", newline="") as f:
+            f.write(f"# version: {version}\n")
+            f.write(f"# schema: {','.join(headers)}\n")
+            writer = csv.writer(f)
+            writer.writerow(header)
+            for row in recent_rows:
+                writer.writerow(row)
+
+        return len(old_rows)
 
     def _append_to_archive(self, live_file: Path, archive_path: Path) -> int:
         """
