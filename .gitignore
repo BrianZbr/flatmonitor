@@ -45,3 +45,6 @@ nohup.out
 .env
 .env.local
 .env.*.local
+
+# Local development scripts (keep uncommitted)
+check-test-domains.py

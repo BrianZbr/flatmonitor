@@ -467,9 +467,9 @@ class TestDomainNameExtraction:
     """Tests for domain name extraction from domain_id."""
 
     def test_domain_name_extraction_with_dots(self):
-        """Test that domain IDs like 'example.com' extract full domain name, not just 'bz'.
+        """Test that domain IDs like 'example.com' extract full domain name, not just 'com'.
         
-        Regression test: Previously 'example.com' extracted 'bz' instead of 'example.com'
+        Regression test: Previously 'example.com' extracted 'com' instead of 'example.com'
         for cert storage lookup, causing cache misses.
         """
         from app.models import DomainConfig, ExpectConfig

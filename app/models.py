@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 def get_log_filename(site_id: str, domain_id: str) -> str:
     """Get the log filename (without path or extension) for a domain.
 
-    Strips the site_id prefix if present (e.g., 'example.com' -> 'bz').
+    Strips the site_id prefix if present (e.g., 'example.com' -> 'com').
     This ensures consistent naming between disk storage, R2 uploads, and HTML links.
     """
     if domain_id.startswith(site_id + "."):

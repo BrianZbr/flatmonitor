@@ -17,7 +17,7 @@ class TestLogFilename:
 
     Regression test: Previously storage.py, storage_backends.py, and renderer.py
     each computed log filenames differently, causing the HTML to reference
-    'example.com.log' while R2 stored 'bz.log', breaking the logs modal.
+    'example.com.log' while R2 stored 'com.log', breaking the logs modal.
     """
 
     def test_strips_site_prefix(self):
@@ -30,7 +30,7 @@ class TestLogFilename:
         assert get_log_filename("httpbin", "httpbin.get") == "get"
 
     def test_site_id_with_dots(self):
-        """example.com site with example.com domain -> 'gl', not 'example.com'."""
+        """example.com site with example.com domain -> 'com', not 'example.com'."""
         assert get_log_filename("example.com", "example.com.org") == "org"
 
 
