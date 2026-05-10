@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Modal</title>
+    <link rel="stylesheet" href="public/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Debug Modal</h1>
+        <button class="log-link" 
+                data-domain-id="annas.gl" 
+                data-log-path="logs/annas/annas.gl.log" 
+                data-domain-url="annas.gl" 
+                data-archive-links="[]">
+            logs
+        </button>
+
+        <!-- Log Preview Modal -->
+        <div id="logModal" class="log-modal">
+            <div class="log-modal-content">
+                <div class="log-modal-header">
+                    <h3 id="logModalTitle">Recent Log Entries</h3>
+                    <button class="log-modal-close" onclick="closeLogModal()">&times;</button>
+                </div>
+                <div class="log-modal-body">
+                    <div id="logModalLoading" class="log-modal-loading">Loading...</div>
+                    <div id="logModalError" class="log-modal-error" style="display: none;"></div>
+                    <table id="logModalTable" class="log-modal-table" style="display: none;">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Status</th>
+                                <th>HTTP</th>
+                                <th>Latency</th>
+                                <th>Reason</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logModalTableBody">
+                        </tbody>
+                    </table>
+                </div>
+                <div class="log-modal-footer">
+                    <a id="logModalFullLog" href="#" target="_blank" rel="noopener noreferrer" class="log-modal-btn">View full log</a>
+                    <div id="logModalArchives" class="log-modal-archives" style="display: none;">
+                        <span class="log-modal-archives-label">Archives:</span>
+                        <div id="logModalArchivesList" class="log-modal-archives-list"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    let currentArchiveLinks = [];
+
+    // Add event listener for log link buttons
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('DOM loaded - adding event listeners');
+        document.querySelectorAll('.log-link').forEach(button => {
+            console.log('Found log link button:', button);
+            button.addEventListener('click', function() {
+                console.log('Button clicked!');
+                const domainId = this.dataset.domainId;
+                const logPath = this.dataset.logPath;
+                const domainUrl = this.dataset.domainUrl;
+                const archiveLinks = JSON.parse(this.dataset.archiveLinks || '[]');
+                console.log('Calling openLogModal with:', { domainId, logPath, domainUrl, archiveLinks });
+                openLogModal(domainId, logPath, domainUrl, archiveLinks);
+            });
+        });
+    });
+
+    function openLogModal(domainId, logPath, domainUrl, archiveLinks) {
+        console.log('openLogModal called');
+        const modal = document.getElementById('logModal');
+        const title = document.getElementById('logModalTitle');
+        const loading = document.getElementById('logModalLoading');
+        const error = document.getElementById('logModalError');
+        const table = document.getElementById('logModalTable');
+        const tbody = document.getElementById('logModalTableBody');
+        const fullLogLink = document.getElementById('logModalFullLog');
+        const archivesSection = document.getElementById('logModalArchives');
+        const archivesList = document.getElementById('logModalArchivesList');
+
+        // Store archive links for potential retry
+        currentArchiveLinks = archiveLinks || [];
+
+        title.textContent = 'Recent Log Entries - ' + domainUrl;
+        loading.style.display = 'block';
+        error.style.display = 'none';
+        table.style.display = 'none';
+        fullLogLink.href = logPath;
+
+        // Populate archive links
+        if (currentArchiveLinks.length > 0) {
+            archivesList.innerHTML = currentArchiveLinks.map(archive =>
+                `<a href="${archive.url}" target="_blank" rel="noopener noreferrer" class="log-modal-archive-link">${archive.date}</a>`
+            ).join('');
+            archivesSection.style.display = 'block';
+        } else {
+            archivesSection.style.display = 'none';
+        }
+
+        modal.style.display = 'flex';
+        console.log('Modal display set to flex, current display:', modal.style.display);
+
+        // Simulate loading some data
+        setTimeout(() => {
+            loading.style.display = 'none';
+            table.style.display = 'table';
+            tbody.innerHTML = '<tr><td>Test Time</td><td>UP</td><td>200</td><td>100ms</td><td></td></tr>';
+        }, 1000);
+    }
+
+    function closeLogModal() {
+        const modal = document.getElementById('logModal');
+        modal.style.display = 'none';
+    }
+
+    // Close modal on ESC key
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closeLogModal();
+        }
+    });
+
+    // Close modal when clicking outside
+    window.onclick = function(event) {
+        const modal = document.getElementById('logModal');
+        if (event.target === modal) {
+            closeLogModal();
+        }
+    }
+    </script>
+</body>
+</html>

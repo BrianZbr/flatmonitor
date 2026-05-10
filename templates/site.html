@@ -30,7 +30,7 @@
         </div>
         <div style="display: flex; align-items: center; gap: 0.75rem;">
             <div class="log-links">
-                <button class="log-link" onclick='openLogModal("{{ domain.id | e }}", "{{ domain.log_path | e }}", "{{ domain.url | replace("https://", "") | replace("http://", "") | e }}", {{ domain.archive_links | default([]) | tojson }})' title="View recent logs">logs</button>
+                <button class="log-link" data-domain-id="{{ domain.id | e }}" data-log-path="{{ domain.log_path | e }}" data-domain-url="{{ domain.url | replace('https://', '') | replace('http://', '') | e }}" data-archive-links='{{ domain.archive_links | default([]) | tojson }}' title="View recent logs">logs</button>
             </div>
             <span class="status-badge {{ domain.status.value|status_class }}">
                 {{ domain.status.value }}
@@ -107,9 +107,6 @@
                 </div>
                 {% endif %}
                 <div style="margin-top: 0.5rem;">Cert: {% if domain.last_check.cert_expiry %}{{ domain.last_check.cert_expiry|format_cert_expiry }}{% else %}N/A{% endif %}</div>
-                <div style="margin-top: 0.5rem; color: #6e7681; font-size: 0.75rem;">
-                    Last check: {{ domain.last_check.timestamp|format_time_ago }}
-                </div>
             </div>
         </div>
     </div>
@@ -171,8 +168,24 @@
     </div>
 </div>
 
+{% endblock %}
+
+{% block extra_js %}
 <script>
 let currentArchiveLinks = [];
+
+// Add event listener for log link buttons
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.log-link').forEach(button => {
+        button.addEventListener('click', function() {
+            const domainId = this.dataset.domainId;
+            const logPath = this.dataset.logPath;
+            const domainUrl = this.dataset.domainUrl;
+            const archiveLinks = JSON.parse(this.dataset.archiveLinks || '[]');
+            openLogModal(domainId, logPath, domainUrl, archiveLinks);
+        });
+    });
+});
 
 function openLogModal(domainId, logPath, domainUrl, archiveLinks) {
     const modal = document.getElementById('logModal');
@@ -212,51 +225,58 @@ function openLogModal(domainId, logPath, domainUrl, archiveLinks) {
             return response.text();
         })
         .then(text => {
-            const lines = text.trim().split('\n');
-            if (lines.length < 2) {
+            // Validate log format version
+            const versionLine = text.split('\n').find(line => line.startsWith('# version:'));
+            if (!versionLine) {
+                throw new Error('Unsupported log format: no version header found');
+            }
+            const version = parseInt(versionLine.split(':')[1].trim());
+            if (version !== 2) {
+                throw new Error(`Unsupported log format version: ${version}. Expected version 2.`);
+            }
+            
+            const lines = text.trim().split('\n').filter(line => line.length > 0 && !line.startsWith('#'));
+            if (lines.length === 0) {
                 throw new Error('No log data available');
             }
 
-            // Skip header, get last 12 entries
-            const dataRows = lines.slice(1).filter(row => row.trim()).slice(-12);
-
-            tbody.innerHTML = '';
-            dataRows.forEach(row => {
-                const cols = row.split(',');
-                if (cols.length < 7) return;
-
-                const timestamp = cols[0];
-                const status = cols[3];
-                const httpStatus = cols[4] || '-';
-                const latency = cols[5] ? cols[5] + 'ms' : '-';
-                const failure = cols[6] || '';
-
-                // Format timestamp as relative time
+            // Skip CSV header row (first row after comments)
+            const dataLines = lines.slice(1);
+            const recentLines = dataLines.slice(-12);
+            
+            // Format timestamp as time ago
+            const formatTimeAgo = (timestamp) => {
                 const date = new Date(timestamp);
+                if (isNaN(date.getTime())) return timestamp;
                 const now = new Date();
-                const diffMs = now - date;
-                const diffMins = Math.floor(diffMs / 60000);
-                const diffHours = Math.floor(diffMs / 3600000);
-                const diffDays = Math.floor(diffMs / 86400000);
+                const diff = Math.floor((now - date) / 1000);
+                if (diff < 60) return diff + 's ago';
+                if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+                if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+                return Math.floor(diff / 86400) + 'd ago';
+            };
+            
+            tbody.innerHTML = '';
+            recentLines.forEach(line => {
+                const parts = line.split(',');
+                if (parts.length >= 5) {
+                    const timestamp = parts[0];
+                    const timeAgo = formatTimeAgo(timestamp);
+                    const status = parts[3];
+                    const httpStatus = parts[4];
+                    const latency = parts[5] ? parts[5] + 'ms' : '';
+                    const failure = parts[6] || '';
 
-                let timeAgo;
-                if (diffMins < 1) timeAgo = 'just now';
-                else if (diffMins < 60) timeAgo = diffMins + 'm ago';
-                else if (diffHours < 24) timeAgo = diffHours + 'h ago';
-                else timeAgo = diffDays + 'd ago';
-
-                // Status class mapping
-                const statusClass = status.toLowerCase().replace(/_/g, '-');
-
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${timeAgo}</td>
-                    <td><span class="log-modal-status ${statusClass}">${status}</span></td>
-                    <td>${httpStatus}</td>
-                    <td>${latency}</td>
-                    <td>${failure}</td>
-                `;
-                tbody.appendChild(tr);
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${timeAgo}</td>
+                        <td><span class="log-modal-status ${status.toLowerCase()}">${status}</span></td>
+                        <td>${httpStatus}</td>
+                        <td>${latency}</td>
+                        <td>${failure}</td>
+                    `;
+                    tbody.appendChild(tr);
+                }
             });
 
             loading.style.display = 'none';

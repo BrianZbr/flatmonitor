@@ -47,7 +47,6 @@
             {% if site.down_count > 0 %}<span class="count" style="color: #f85149;">{{ site.down_count }} DOWN</span>{% endif %}
             {% if site.timeout_count > 0 %}<span class="count" style="color: #f85149;">{{ site.timeout_count }} TIMEOUT</span>{% endif %}
             {% if site.unknown_count > 0 %}<span class="count" style="color: #6e7681;">{{ site.unknown_count }} UNKNOWN</span>{% endif %}
-            {% if site.last_check %}<span style="color: #6e7681; margin-left: auto;">Last check: {{ site.last_check|format_time_ago }}</span>{% endif %}
         </div>
 
         <!-- Dense Domain List -->

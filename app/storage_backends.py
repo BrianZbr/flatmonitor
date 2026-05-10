@@ -7,6 +7,7 @@ Supports local filesystem (default) and R2/S3-compatible object storage.
 
 import os
 import hashlib
+import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional, Dict
@@ -96,22 +97,62 @@ class FilesystemBackend(StorageBackend):
         return str(output_path.resolve())
 
     def upload_logs(self, data_dir: Path) -> dict:
-        """No-op for filesystem backend - logs are already local.
+        """Copy logs to public directory for serving.
         
         Returns:
-            Empty status dict since files are already local
+            Status dict with copy results
         """
-        return {'uploaded': 0, 'skipped': 0, 'failed': 0, 'total': 0}
+        # Create logs directory in public
+        public_logs_dir = self.output_dir / "logs"
+        public_logs_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Copy live logs
+        live_dir = data_dir / "live"
+        if live_dir.exists():
+            copied = 0
+            for site_dir in live_dir.iterdir():
+                if site_dir.is_dir():
+                    public_site_dir = public_logs_dir / site_dir.name
+                    public_site_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    for log_file in site_dir.glob("*.log"):
+                        dest = public_site_dir / log_file.name
+                        import shutil
+                        shutil.copy2(log_file, dest)
+                        copied += 1
+        
+        # Copy archive logs
+        archive_dir = data_dir / "archive"
+        if archive_dir.exists():
+            public_archive_dir = self.output_dir / "logs" / "archive"
+            public_archive_dir.mkdir(parents=True, exist_ok=True)
+            
+            for month_dir in archive_dir.iterdir():
+                if month_dir.is_dir():
+                    public_month_dir = public_archive_dir / month_dir.name
+                    public_month_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    for site_dir in month_dir.iterdir():
+                        if site_dir.is_dir():
+                            public_site_dir = public_month_dir / site_dir.name
+                            public_site_dir.mkdir(parents=True, exist_ok=True)
+                            
+                            for log_file in site_dir.glob("*.log"):
+                                dest = public_site_dir / log_file.name
+                                import shutil
+                                shutil.copy2(log_file, dest)
+                                copied += 1
+        
+        return {'uploaded': copied, 'skipped': 0, 'failed': 0, 'total': copied}
 
     def get_log_public_url(self, site_id: str, domain_name: str) -> str:
         """Return relative URL path to log file from site page."""
-        # Site pages are in public/, logs are in data/live/
-        # From public/{site}.html, go up one level then to data/
-        return f"../data/live/{site_id}/{domain_name}.log"
+        # Site pages are in public/, logs are now copied to public/logs/
+        return f"logs/{site_id}/{domain_name}.log"
 
     def get_archive_log_public_url(self, site_id: str, domain_name: str, date: str) -> str:
         """Return relative URL path to archived log file from site page."""
-        return f"../data/archive/{date}/{site_id}/{domain_name}.log"
+        return f"logs/archive/{date}/{site_id}/{domain_name}.log"
 
     def upload_assets(self, assets_dir: Path) -> None:
         """No-op for filesystem backend - assets are already local."""

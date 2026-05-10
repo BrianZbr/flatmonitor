@@ -195,6 +195,7 @@ The renderer supports pluggable storage backends for the generated HTML dashboar
 
 **1. FilesystemBackend (Default)**
 - Writes to local directory (default: `public/`)
+- Copies logs from `data/live/` and `data/archive/` to `public/logs/` during `build_static_site()` so they are accessible via HTTP
 - Suitable for development and low-traffic deployments
 - Serve with nginx, Caddy, or any static file server
 
@@ -556,6 +557,9 @@ domains:
 - [ ] Hourly rotation archives files properly
 - [ ] Cleanup removes old archives
 - [ ] Graceful shutdown processes remaining queue items
+- [ ] Log modal opens and displays entries on site detail pages
+- [ ] `public/logs/` directory is populated after build
+- [ ] Log files are accessible via HTTP from the dashboard
 
 ## 13. UI Design Requirements
 

@@ -67,6 +67,13 @@ class Renderer:
         sites = aggregated_data.get("sites", {})
         for site_id, site_data in sites.items():
             self._build_site_page(site_id, site_data, aggregated_data["generated_at"])
+        
+        # For FilesystemBackend, copy logs to public directory for serving
+        if isinstance(self.storage, FilesystemBackend):
+            from app.storage import Storage
+            storage = Storage(data_dir=self.data_dir)
+            data_path = Path(self.data_dir)
+            self.storage.upload_logs(data_path)
 
     def _build_index(self, aggregated_data: Dict) -> None:
         """Build the main index page with global dashboard."""

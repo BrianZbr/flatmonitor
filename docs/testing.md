@@ -18,13 +18,66 @@ FlatMonitor uses pytest markers to categorize tests:
 
 ### Backend Tests (`@pytest.mark.backend`)
 - **Purpose**: Test real cloud storage backends (R2, S3)
-- **Backend**: Requires actual cloud credentials
-- **Run**: `pytest -m backend` (only with credentials set)
-- **Speed**: Slow, makes real API calls
+- **Run**: `pytest -m backend`
+- **Speed**: Slow, requires real credentials and network access
 
-## Backend Credential Testing
+### Slow Tests (`@pytest.mark.slow`)
+Marked as slow and skipped by default for regular CI/CD:
 
-### Environment Variables
+```bash
+# Run all tests (excludes slow by default)
+pytest
+
+# Include slow tests
+pytest -m slow
+
+# Run only slow integration tests
+pytest -m "slow and integration"
+```
+
+**`test_full_modal_pipeline`**
+- Tests complete flow: build → serve → fetch → parse
+- **Fragile**: May fail due to port conflicts, Node.js issues, network timing
+- **Purpose**: Validates entire pipeline before releases
+- **Not recommended**: For regular CI/CD due to external dependencies
+
+## Test Fragility
+
+### Robust Tests (Low Maintenance)
+- ✅ Template rendering tests
+- ✅ Version validation tests  
+- ✅ Parser logic tests with static data
+
+### Fragile Tests (High Maintenance)
+- ❌ Network-dependent tests
+- ❌ HTTP server tests
+- ❌ Port-binding tests
+
+When fragile tests fail, first check environmental issues:
+1. Port availability (8081 for integration tests)
+2. Node.js installation and version
+3. Network connectivity
+4. File permissions
+
+## Running Tests
+
+### Quick Development
+```bash
+# Run fast unit tests only
+pytest -m "not slow"
+```
+
+### Full Validation
+```bash
+# Run all tests including slow integration tests
+pytest -m slow
+```
+
+### CI/CD Recommendation
+Use unit tests for continuous integration. Run slow tests:
+- Before releases
+- When making changes to the modal pipeline
+- For manual validation
 
 For R2 backend testing:
 ```bash
@@ -101,6 +154,15 @@ def test_r2_real_connection(self):
     # Only runs with credentials available
     # Makes real API calls to R2/S3
 ```
+
+## Modal & Log Display Tests
+
+When the log modal was refactored from inline `onclick` to data attributes, several integration failures occurred that unit tests did not catch:
+
+**Required integration test coverage:**
+- Verify `data-archive-links` attribute contains valid JSON after HTML parsing (regression: double quotes inside double-quoted attribute broke parsing)
+- Verify `data-log-path` resolves to a file that exists after `build_static_site()` (regression: FilesystemBackend didn't copy logs to public directory)
+- Verify generated log file can be parsed by the modal's JavaScript parser (regression: JS assumed space-separated but logs are CSV)
 
 ## Best Practices
 
