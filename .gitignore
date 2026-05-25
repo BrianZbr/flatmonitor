@@ -48,3 +48,6 @@ nohup.out
 
 # Local development scripts (keep uncommitted)
 check-test-domains.py
+
+# Docker Compose (use example template instead)
+docker-compose.yml

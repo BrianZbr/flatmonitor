@@ -120,7 +120,7 @@ cp .env.example .env
 # Edit .env with your actual R2 credentials
 ```
 
-**Docker Compose:** The `docker-compose.yml` is configured to automatically load environment variables from `.env`:
+**Docker Compose:** Copy `docker-compose.yml.example` to `docker-compose.yml` and it will automatically load environment variables from `.env`:
 
 ```yaml
 env_file:

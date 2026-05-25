@@ -67,8 +67,9 @@ server {
 Simplest deployment - just edit `config/domains.yaml` and run:
 
 ```bash
-# 1. Copy example config and edit
+# 1. Copy example configs and edit
 cp config/domains.yaml.example config/domains.yaml
+cp docker-compose.yml.example docker-compose.yml
 # Edit config/domains.yaml with your URLs
 
 # 2. Start monitoring
