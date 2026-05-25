@@ -96,7 +96,8 @@ class FlatMonitor:
             'favicon': self.config_loader.dashboard.favicon,
             'logo': self.config_loader.dashboard.logo,
             'header_hint': self.config_loader.dashboard.header_hint,
-            'footer_explanation': self.config_loader.dashboard.footer_explanation
+            'footer_explanation': self.config_loader.dashboard.footer_explanation,
+            'build_interval_seconds': self.config_loader.dashboard.build_interval_seconds
         }
         self.renderer = Renderer(
             output_dir=self.output_dir,
@@ -267,8 +268,11 @@ class FlatMonitor:
                 'logo': dashboard_settings.get('logo', self.config_loader.dashboard.logo),
                 'sort_by': dashboard_settings.get('sort_by', self.config_loader.dashboard.sort_by),
                 'header_hint': dashboard_settings.get('header_hint', self.config_loader.dashboard.header_hint),
-                'footer_explanation': dashboard_settings.get('footer_explanation', self.config_loader.dashboard.footer_explanation)
+                'footer_explanation': dashboard_settings.get('footer_explanation', self.config_loader.dashboard.footer_explanation),
+                'build_interval_seconds': dashboard_settings.get('build_interval_seconds', self.config_loader.dashboard.build_interval_seconds)
             }
+            # Update rebuild throttle if changed
+            self.renderer.min_build_interval = self.renderer.dashboard_config.get('build_interval_seconds', 30)
 
             logger.debug("Dashboard config reloaded")
         except Exception as e:

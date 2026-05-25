@@ -174,7 +174,7 @@ Failures for bucket aggregation: DOWN, TIMEOUT, UNKNOWN
 Successes for bucket aggregation: UP, PROTECTED
 
 ## 8. Renderer (renderer.py)
-- **Throttle**: The renderer should only trigger if `new_data` is present AND at least 30 seconds have passed since the last build.
+- **Throttle**: The renderer should only trigger if `new_data` is present AND at least `build_interval_seconds` (default: 30, configurable via `settings.dashboard.build_interval_seconds`) have passed since the last build.
 - **Timeline Rendering**: Display 48 spans (4 hours) of 5-minute buckets:
   - Aggregator produces 5-minute buckets directly
   - Color-coded status spans: `<span class="up">` (Green), `<span class="down">` (Red), `<span class="degraded">` (Yellow), `<span class="protected">` (Green), `<span class="unknown">` (Gray)
@@ -355,6 +355,7 @@ settings:
     header_hint: "Click any site title for detailed status and logs."  # Hint shown above site grid (index page only)
     footer_explanation: "<strong>Custom:</strong> Your explanation here."  # Custom HTML footer text (both pages, optional)
     instance_label: "US-East Primary"          # Optional label for this instance (shows in footer, useful for multi-instance setups)
+    build_interval_seconds: 30                # Minimum seconds between dashboard rebuilds (default: 30, min: 10)
 ```
 
 **Behavior:**
@@ -369,8 +370,9 @@ settings:
 - `favicon`: Optional favicon filename. Place the image file in `public/assets/` directory
 - `logo`: Optional header logo image. Place the image file in `public/assets/` directory. If not set, no logo is displayed
 - `instance_label`: Optional identifier for this monitoring instance (e.g., "US-East Primary", "EU-West Secondary"). Displayed in the footer to help identify which instance generated the dashboard. Useful when running multiple instances for redundancy or geographic distribution.
+- `build_interval_seconds`: Controls how often the static HTML dashboard is rebuilt and uploaded to R2. Higher values reduce R2 operations but slow down dashboard updates. Minimum is 10 seconds.
 
-**Auto-Reload:** Dashboard settings are automatically reloaded before each dashboard rebuild (every 30+ seconds when new data is available). Changes to `title`, `logo`, `favicon`, `header_text`, `announcement`, `footer_links`, `sort_by`, `header_hint`, `footer_explanation`, and `instance_label` take effect without restarting the application.
+**Auto-Reload:** Dashboard settings are automatically reloaded before each dashboard rebuild. Changes to `title`, `logo`, `favicon`, `header_text`, `announcement`, `footer_links`, `sort_by`, `header_hint`, `footer_explanation`, `instance_label`, and `build_interval_seconds` take effect without restarting the application.
 
 **Note:** Domain and storage configuration changes still require a restart. Only dashboard customization settings support hot-reloading.
 
@@ -552,7 +554,7 @@ domains:
 - [ ] HTTP checks execute at specified intervals
 - [ ] All status classifications (UP, DOWN, PROTECTED, TIMEOUT, UNKNOWN) work
 - [ ] CSV files append without corruption
-- [ ] Dashboard updates within 30 seconds of new data
+- [ ] Dashboard updates within `build_interval_seconds` of new data
 - [ ] Site health correctly reflects domain status aggregation
 - [ ] Hourly rotation archives files properly
 - [ ] Cleanup removes old archives

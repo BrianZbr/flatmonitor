@@ -84,6 +84,7 @@ class DashboardConfig(BaseModel):
     header_hint: Optional[str] = Field(default="Click any site title for detailed status and logs.", description="Hint shown above site grid")
     footer_explanation: Optional[str] = Field(default=None, description="Custom HTML footer text")
     instance_label: Optional[str] = Field(default=None, description="Instance label (e.g., 'US-East Primary')")
+    build_interval_seconds: int = Field(default=30, ge=10, description="Minimum interval between dashboard rebuilds in seconds")
 
 
 class StorageConfig(BaseModel):
@@ -148,7 +149,8 @@ class ConfigLoader:
             logo=dashboard_settings.get('logo'),
             header_hint=dashboard_settings.get('header_hint', 'Click any site title for detailed status and logs.'),
             footer_explanation=dashboard_settings.get('footer_explanation'),
-            instance_label=dashboard_settings.get('instance_label')
+            instance_label=dashboard_settings.get('instance_label'),
+            build_interval_seconds=dashboard_settings.get('build_interval_seconds', 30)
         )
 
         # Parse storage configuration

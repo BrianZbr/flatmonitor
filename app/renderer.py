@@ -48,7 +48,7 @@ class Renderer:
 
         # Track last build time for throttling
         self.last_build_time = 0
-        self.min_build_interval = 30  # seconds
+        self.min_build_interval = self.dashboard_config.get('build_interval_seconds', 30)
 
     def should_rebuild(self) -> bool:
         """Check if enough time has passed since last build."""
