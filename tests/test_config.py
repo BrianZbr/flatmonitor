@@ -469,7 +469,7 @@ domains:
             os.unlink(temp_path)
 
     def test_auto_refresh_seconds_default(self):
-        """auto_refresh_seconds defaults to 0 when not set."""
+        """auto_refresh_seconds defaults to 120 when not set."""
         yaml_content = """
 domains:
   - id: test.site
@@ -482,7 +482,7 @@ domains:
         try:
             loader = ConfigLoader(temp_path)
             loader.load()
-            assert loader.dashboard.auto_refresh_seconds == 0
+            assert loader.dashboard.auto_refresh_seconds == 120
         finally:
             os.unlink(temp_path)
 

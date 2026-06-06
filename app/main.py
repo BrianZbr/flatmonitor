@@ -4,6 +4,7 @@ FlatMonitor - Main Orchestrator
 Manages queues and the main loop for the monitoring system.
 """
 
+import os
 import time
 import logging
 import signal
@@ -11,6 +12,7 @@ import sys
 import traceback
 import yaml
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
 from pathlib import Path
 from queue import Queue, Empty
 from threading import Thread, Lock
@@ -98,7 +100,9 @@ class FlatMonitor:
             'header_hint': self.config_loader.dashboard.header_hint,
             'footer_explanation': self.config_loader.dashboard.footer_explanation,
             'build_interval_seconds': self.config_loader.dashboard.build_interval_seconds,
-            'auto_refresh_seconds': self.config_loader.dashboard.auto_refresh_seconds
+            'auto_refresh_seconds': self.config_loader.dashboard.auto_refresh_seconds,
+            'instance_label': self.config_loader.dashboard.instance_label,
+            'sort_by': self.config_loader.dashboard.sort_by
         }
         self.renderer = Renderer(
             output_dir=self.output_dir,
@@ -271,7 +275,8 @@ class FlatMonitor:
                 'header_hint': dashboard_settings.get('header_hint', self.config_loader.dashboard.header_hint),
                 'footer_explanation': dashboard_settings.get('footer_explanation', self.config_loader.dashboard.footer_explanation),
                 'build_interval_seconds': dashboard_settings.get('build_interval_seconds', self.config_loader.dashboard.build_interval_seconds),
-                'auto_refresh_seconds': dashboard_settings.get('auto_refresh_seconds', self.config_loader.dashboard.auto_refresh_seconds)
+                'auto_refresh_seconds': dashboard_settings.get('auto_refresh_seconds', self.config_loader.dashboard.auto_refresh_seconds),
+                'instance_label': dashboard_settings.get('instance_label', self.config_loader.dashboard.instance_label)
             }
             # Update rebuild throttle if changed
             self.renderer.min_build_interval = self.renderer.dashboard_config.get('build_interval_seconds', 30)
@@ -357,7 +362,17 @@ class FlatMonitor:
 
 def main():
     """Entry point for FlatMonitor."""
-    monitor = FlatMonitor()
+    load_dotenv()
+    config_path = os.environ.get('FLATMONITOR_CONFIG', 'config/domains.yaml')
+    data_dir = os.environ.get('FLATMONITOR_DATA_DIR', 'data')
+    output_dir = os.environ.get('FLATMONITOR_OUTPUT_DIR', 'public')
+    workers = int(os.environ.get('FLATMONITOR_WORKERS', '10'))
+    monitor = FlatMonitor(
+        config_path=config_path,
+        data_dir=data_dir,
+        output_dir=output_dir,
+        worker_count=workers
+    )
     monitor.start()
 
 

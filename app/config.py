@@ -88,7 +88,7 @@ class DashboardConfig(BaseModel):
     footer_explanation: Optional[str] = Field(default=None, description="Custom HTML footer text")
     instance_label: Optional[str] = Field(default=None, description="Instance label (e.g., 'US-East Primary')")
     build_interval_seconds: int = Field(default=30, ge=10, description="Minimum interval between dashboard rebuilds in seconds")
-    auto_refresh_seconds: int = Field(default=0, ge=0, description="Auto-refresh interval in seconds (0 = disabled)")
+    auto_refresh_seconds: int = Field(default=120, ge=0, description="Auto-refresh interval in seconds (0 = disabled)")
 
 
 class StorageConfig(BaseModel):
@@ -155,7 +155,7 @@ class ConfigLoader:
             footer_explanation=dashboard_settings.get('footer_explanation'),
             instance_label=dashboard_settings.get('instance_label'),
             build_interval_seconds=dashboard_settings.get('build_interval_seconds', 30),
-            auto_refresh_seconds=dashboard_settings.get('auto_refresh_seconds', 0)
+            auto_refresh_seconds=dashboard_settings.get('auto_refresh_seconds', 120)
         )
 
         # Parse storage configuration
@@ -247,33 +247,42 @@ class ConfigLoader:
         }
 
         # Parse R2 config (with env var support via ${VAR} syntax)
+        # Only expand env vars when R2 is the active storage type to avoid noisy warnings
         r2_config = None
         if 'r2' in storage_settings:
             r2_raw = storage_settings['r2']
-            r2_config = {
-                'account_id': expand_env_vars(r2_raw.get('account_id', '${FLATMONITOR_R2_ACCOUNT_ID}'), 'settings.storage.r2.account_id'),
-                'access_key_id': expand_env_vars(r2_raw.get('access_key_id', '${FLATMONITOR_R2_ACCESS_KEY_ID}'), 'settings.storage.r2.access_key_id'),
-                'secret_access_key': expand_env_vars(r2_raw.get('secret_access_key', '${FLATMONITOR_R2_SECRET_ACCESS_KEY}'), 'settings.storage.r2.secret_access_key'),
-                'bucket_name': expand_env_vars(r2_raw.get('bucket_name', '${FLATMONITOR_R2_BUCKET_NAME}'), 'settings.storage.r2.bucket_name'),
-                'public_domain': expand_env_vars(r2_raw.get('public_domain'), 'settings.storage.r2.public_domain') if r2_raw.get('public_domain') else None,
-                'endpoint_url': r2_raw.get('endpoint_url'),
-                'region': r2_raw.get('region', 'auto'),
-                'cache_max_age': r2_raw.get('cache_max_age', 60)
-            }
+            if storage_type == 'r2':
+                r2_config = {
+                    'account_id': expand_env_vars(r2_raw.get('account_id', '${FLATMONITOR_R2_ACCOUNT_ID}'), 'settings.storage.r2.account_id'),
+                    'access_key_id': expand_env_vars(r2_raw.get('access_key_id', '${FLATMONITOR_R2_ACCESS_KEY_ID}'), 'settings.storage.r2.access_key_id'),
+                    'secret_access_key': expand_env_vars(r2_raw.get('secret_access_key', '${FLATMONITOR_R2_SECRET_ACCESS_KEY}'), 'settings.storage.r2.secret_access_key'),
+                    'bucket_name': expand_env_vars(r2_raw.get('bucket_name', '${FLATMONITOR_R2_BUCKET_NAME}'), 'settings.storage.r2.bucket_name'),
+                    'public_domain': expand_env_vars(r2_raw.get('public_domain'), 'settings.storage.r2.public_domain') if r2_raw.get('public_domain') else None,
+                    'endpoint_url': r2_raw.get('endpoint_url'),
+                    'region': r2_raw.get('region', 'auto'),
+                    'cache_max_age': r2_raw.get('cache_max_age', 60)
+                }
+            else:
+                # Pass through raw values without env expansion when inactive
+                r2_config = {k: v for k, v in r2_raw.items()}
 
         # Parse S3 config (with env var support via ${VAR} syntax)
         s3_config = None
         if 's3' in storage_settings:
             s3_raw = storage_settings['s3']
-            s3_config = {
-                'access_key_id': expand_env_vars(s3_raw.get('access_key_id', '${FLATMONITOR_AWS_ACCESS_KEY_ID}'), 'settings.storage.s3.access_key_id'),
-                'secret_access_key': expand_env_vars(s3_raw.get('secret_access_key', '${FLATMONITOR_AWS_SECRET_ACCESS_KEY}'), 'settings.storage.s3.secret_access_key'),
-                'bucket_name': expand_env_vars(s3_raw.get('bucket_name', '${FLATMONITOR_S3_BUCKET_NAME}'), 'settings.storage.s3.bucket_name'),
-                'region': s3_raw.get('region', 'us-east-1'),
-                'endpoint_url': s3_raw.get('endpoint_url'),
-                'public_domain': expand_env_vars(s3_raw.get('public_domain')) if s3_raw.get('public_domain') else None,
-                'cache_max_age': s3_raw.get('cache_max_age', 60)
-            }
+            if storage_type == 's3':
+                s3_config = {
+                    'access_key_id': expand_env_vars(s3_raw.get('access_key_id', '${FLATMONITOR_AWS_ACCESS_KEY_ID}'), 'settings.storage.s3.access_key_id'),
+                    'secret_access_key': expand_env_vars(s3_raw.get('secret_access_key', '${FLATMONITOR_AWS_SECRET_ACCESS_KEY}'), 'settings.storage.s3.secret_access_key'),
+                    'bucket_name': expand_env_vars(s3_raw.get('bucket_name', '${FLATMONITOR_S3_BUCKET_NAME}'), 'settings.storage.s3.bucket_name'),
+                    'region': s3_raw.get('region', 'us-east-1'),
+                    'endpoint_url': s3_raw.get('endpoint_url'),
+                    'public_domain': expand_env_vars(s3_raw.get('public_domain')) if s3_raw.get('public_domain') else None,
+                    'cache_max_age': s3_raw.get('cache_max_age', 60)
+                }
+            else:
+                # Pass through raw values without env expansion when inactive
+                s3_config = {k: v for k, v in s3_raw.items()}
 
         return StorageConfig(
             type=storage_type,
