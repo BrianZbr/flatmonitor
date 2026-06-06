@@ -8,6 +8,8 @@ Supports local filesystem (default) and R2/S3-compatible object storage.
 import os
 import hashlib
 import shutil
+import logging
+import mimetypes
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional, Dict
@@ -118,7 +120,6 @@ class FilesystemBackend(StorageBackend):
                     
                     for log_file in site_dir.glob("*.log"):
                         dest = public_site_dir / log_file.name
-                        import shutil
                         shutil.copy2(log_file, dest)
                         copied += 1
         
@@ -140,7 +141,6 @@ class FilesystemBackend(StorageBackend):
                             
                             for log_file in site_dir.glob("*.log"):
                                 dest = public_site_dir / log_file.name
-                                import shutil
                                 shutil.copy2(log_file, dest)
                                 copied += 1
         
@@ -278,7 +278,6 @@ class R2Backend(StorageBackend):
         if not live_dir.exists():
             return {'uploaded': 0, 'skipped': 0, 'failed': 0, 'total': 0}
 
-        import logging
         logger = logging.getLogger(__name__)
         uploaded_count = 0
         skipped_count = 0
@@ -293,29 +292,24 @@ class R2Backend(StorageBackend):
             for log_file in site_dir.glob("*.log"):
                 total_count += 1
                 try:
-                    # Read log file content
                     with open(log_file, "rb") as f:
                         content = f.read()
 
                     if not content:
                         continue
 
-                    # Upload to R2 with path: logs/{site_id}/{domain_name}.log
                     from app.models import get_log_filename
                     domain_name = get_log_filename(site_id, log_file.stem)
                     key = f"logs/{site_id}/{domain_name}.log"
 
-                    # Calculate hash for deduplication
                     content_hash = hashlib.sha256(content).hexdigest()
 
-                    # Check if content changed (using cache)
                     cache_key = f"log:{key}"
                     if cache_key in self._content_cache:
                         if self._content_cache[cache_key] == content_hash:
                             skipped_count += 1
-                            continue  # Skip unchanged files
+                            continue
 
-                    # Upload to R2
                     self.s3_client.put_object(
                         Bucket=self.bucket_name,
                         Key=key,
@@ -328,7 +322,6 @@ class R2Backend(StorageBackend):
                         }
                     )
 
-                    # Update cache
                     self._content_cache[cache_key] = content_hash
                     uploaded_count += 1
                     logger.info(f"Uploaded log: {key}")
@@ -337,7 +330,6 @@ class R2Backend(StorageBackend):
                     failed_count += 1
                     logger.warning(f"Failed to upload log {log_file}: {e}")
 
-        # Upload archived logs
         archive_dir = data_dir / "archive"
         if archive_dir.exists():
             for date_dir in archive_dir.iterdir():
@@ -400,8 +392,6 @@ class R2Backend(StorageBackend):
 
     def upload_assets(self, assets_dir: Path) -> None:
         """Upload static assets (images, etc.) from assets_dir to R2 storage."""
-        import logging
-        import mimetypes
         logger = logging.getLogger(__name__)
 
         if not assets_dir.exists():
@@ -475,8 +465,6 @@ class R2Backend(StorageBackend):
 
     def upload_static(self, static_dir: Path) -> None:
         """Upload static files (CSS, JS) from static_dir to R2 storage."""
-        import logging
-        import mimetypes
         logger = logging.getLogger(__name__)
 
         if not static_dir.exists():
