@@ -106,10 +106,11 @@ class FilesystemBackend(StorageBackend):
         public_logs_dir = self.output_dir / "logs"
         public_logs_dir.mkdir(parents=True, exist_ok=True)
         
+        copied = 0
+        
         # Copy live logs
         live_dir = data_dir / "live"
         if live_dir.exists():
-            copied = 0
             for site_dir in live_dir.iterdir():
                 if site_dir.is_dir():
                     public_site_dir = public_logs_dir / site_dir.name

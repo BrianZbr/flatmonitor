@@ -54,7 +54,7 @@ class TestFilesystemBackend:
 
             url = backend.get_log_public_url("mysite", "example.com")
 
-            assert url == "../data/live/mysite/example.com.log"
+            assert url == "logs/mysite/example.com.log"
 
     def test_get_archive_log_public_url_returns_relative_path(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -62,7 +62,7 @@ class TestFilesystemBackend:
 
             url = backend.get_archive_log_public_url("mysite", "example.com", "2024-01-15")
 
-            assert url == "../data/archive/2024-01-15/mysite/example.com.log"
+            assert url == "logs/archive/2024-01-15/mysite/example.com.log"
 
     def test_upload_logs_is_noop(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -247,10 +247,10 @@ class TestCredentialHandling:
             )
 
     @patch.dict(os.environ, {
-        'R2_ACCOUNT_ID': 'env123',
-        'R2_ACCESS_KEY_ID': 'envAKIA',
-        'R2_SECRET_ACCESS_KEY': 'envsecret',
-        'R2_BUCKET_NAME': 'env-bucket'
+        'FLATMONITOR_R2_ACCOUNT_ID': 'env123',
+        'FLATMONITOR_R2_ACCESS_KEY_ID': 'envAKIA',
+        'FLATMONITOR_R2_SECRET_ACCESS_KEY': 'envsecret',
+        'FLATMONITOR_R2_BUCKET_NAME': 'env-bucket'
     })
     def test_r2_credentials_from_environment(self):
         """Test R2 credentials can be loaded from environment variables."""
@@ -267,9 +267,9 @@ class TestCredentialHandling:
             assert backend.bucket_name == "env-bucket"
 
     @patch.dict(os.environ, {
-        'AWS_ACCESS_KEY_ID': 'envAKIA',
-        'AWS_SECRET_ACCESS_KEY': 'envsecret',
-        'S3_BUCKET_NAME': 'env-bucket'
+        'FLATMONITOR_AWS_ACCESS_KEY_ID': 'envAKIA',
+        'FLATMONITOR_AWS_SECRET_ACCESS_KEY': 'envsecret',
+        'FLATMONITOR_S3_BUCKET_NAME': 'env-bucket'
     })
     def test_s3_credentials_from_environment(self):
         """Test S3 credentials can be loaded from environment variables."""
