@@ -20,6 +20,7 @@
 #         url: "https://example.com/terms"
 #       - text: "Privacy Policy"
 #         url: "https://example.com/privacy"
+#     auto_refresh_seconds: 60  # Auto-refresh page every N seconds (0 = disabled)
 #     header_hint: "Click any site title for detailed status and logs."  # Hint above site grid (index page)
 #     footer_explanation: "<strong>How to read:</strong> Green = matches expectations."  # Custom HTML footer (both pages, optional)
 #

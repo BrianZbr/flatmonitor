@@ -398,6 +398,116 @@ class TestExpandEnvVars:
         assert expand_env_vars(None) is None
         assert expand_env_vars(["a", "b"]) == ["a", "b"]
 
+    def test_storage_type_env_var_override(self, monkeypatch):
+        """FLATMONITOR_STORAGE_TYPE env var overrides YAML storage type."""
+        monkeypatch.setenv("FLATMONITOR_STORAGE_TYPE", "filesystem")
+
+        yaml_content = """
+settings:
+  storage:
+    type: r2
+
+domains:
+  - id: test.site
+    url: https://example.com
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(yaml_content)
+            temp_path = f.name
+
+        try:
+            loader = ConfigLoader(temp_path)
+            loader.load()
+            assert loader.storage.type == "filesystem"
+        finally:
+            os.unlink(temp_path)
+
+    def test_storage_type_env_var_override_any_value(self, monkeypatch):
+        """FLATMONITOR_STORAGE_TYPE accepts any value (no validation at config level)."""
+        monkeypatch.setenv("FLATMONITOR_STORAGE_TYPE", "custom_backend")
+
+        yaml_content = """
+settings:
+  storage:
+    type: r2
+
+domains:
+  - id: test.site
+    url: https://example.com
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(yaml_content)
+            temp_path = f.name
+
+        try:
+            loader = ConfigLoader(temp_path)
+            loader.load()
+            assert loader.storage.type == "custom_backend"
+        finally:
+            os.unlink(temp_path)
+
+    def test_storage_type_no_env_var_uses_yaml(self):
+        """Without FLATMONITOR_STORAGE_TYPE, YAML config value is used."""
+        yaml_content = """
+settings:
+  storage:
+    type: s3
+
+domains:
+  - id: test.site
+    url: https://example.com
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(yaml_content)
+            temp_path = f.name
+
+        try:
+            loader = ConfigLoader(temp_path)
+            loader.load()
+            assert loader.storage.type == "s3"
+        finally:
+            os.unlink(temp_path)
+
+    def test_auto_refresh_seconds_default(self):
+        """auto_refresh_seconds defaults to 0 when not set."""
+        yaml_content = """
+domains:
+  - id: test.site
+    url: https://example.com
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(yaml_content)
+            temp_path = f.name
+
+        try:
+            loader = ConfigLoader(temp_path)
+            loader.load()
+            assert loader.dashboard.auto_refresh_seconds == 0
+        finally:
+            os.unlink(temp_path)
+
+    def test_auto_refresh_seconds_from_config(self):
+        """auto_refresh_seconds can be set via config."""
+        yaml_content = """
+settings:
+  dashboard:
+    auto_refresh_seconds: 120
+
+domains:
+  - id: test.site
+    url: https://example.com
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(yaml_content)
+            temp_path = f.name
+
+        try:
+            loader = ConfigLoader(temp_path)
+            loader.load()
+            assert loader.dashboard.auto_refresh_seconds == 120
+        finally:
+            os.unlink(temp_path)
+
     def test_storage_config_expansion(self, monkeypatch):
         """Storage config values are expanded when parsed."""
         monkeypatch.setenv("FLATMONITOR_R2_ACCOUNT_ID", "test-acc")

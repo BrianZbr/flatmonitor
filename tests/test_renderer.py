@@ -724,6 +724,60 @@ http.get('http://127.0.0.1:8081/logs/test/example.com.log', (res) => {
         assert "1 TIMEOUT" in content
         assert "1 UNKNOWN" in content
 
+    def test_auto_refresh_meta_tag_present(self, sample_aggregated_data):
+        """Test that auto-refresh meta tag is included when auto_refresh_seconds > 0."""
+        temp_dir = tempfile.mkdtemp()
+        try:
+            renderer = Renderer(
+                templates_dir="templates",
+                output_dir=temp_dir,
+                dashboard_config={'auto_refresh_seconds': 150}
+            )
+            renderer.build_static_site(sample_aggregated_data)
+
+            index_file = renderer.output_dir / "index.html"
+            content = index_file.read_text()
+
+            assert '<meta http-equiv="refresh" content="150">' in content
+        finally:
+            shutil.rmtree(temp_dir)
+
+    def test_auto_refresh_meta_tag_absent_when_zero(self, sample_aggregated_data):
+        """Test that auto-refresh meta tag is absent when auto_refresh_seconds is 0."""
+        temp_dir = tempfile.mkdtemp()
+        try:
+            renderer = Renderer(
+                templates_dir="templates",
+                output_dir=temp_dir,
+                dashboard_config={'auto_refresh_seconds': 0}
+            )
+            renderer.build_static_site(sample_aggregated_data)
+
+            index_file = renderer.output_dir / "index.html"
+            content = index_file.read_text()
+
+            assert 'http-equiv="refresh"' not in content
+        finally:
+            shutil.rmtree(temp_dir)
+
+    def test_auto_refresh_meta_tag_absent_when_not_set(self, sample_aggregated_data):
+        """Test that auto-refresh meta tag is absent when auto_refresh_seconds not in config."""
+        temp_dir = tempfile.mkdtemp()
+        try:
+            renderer = Renderer(
+                templates_dir="templates",
+                output_dir=temp_dir,
+                dashboard_config={}
+            )
+            renderer.build_static_site(sample_aggregated_data)
+
+            index_file = renderer.output_dir / "index.html"
+            content = index_file.read_text()
+
+            assert 'http-equiv="refresh"' not in content
+        finally:
+            shutil.rmtree(temp_dir)
+
     def test_noindex_meta_tag_present(self, sample_aggregated_data):
         """Test that noindex meta tag is included when noindex=True."""
         temp_dir = tempfile.mkdtemp()

@@ -170,7 +170,8 @@ class Renderer:
             logo=self.dashboard_config.get('logo'),
             header_hint=self.dashboard_config.get('header_hint'),
             footer_explanation=self.dashboard_config.get('footer_explanation'),
-            instance_label=self.dashboard_config.get('instance_label')
+            instance_label=self.dashboard_config.get('instance_label'),
+            auto_refresh_seconds=self.dashboard_config.get('auto_refresh_seconds', 0)
         )
 
         # Write using storage backend (returns public URL or path)
@@ -262,7 +263,8 @@ class Renderer:
                 footer_links=self.dashboard_config.get('footer_links', []),
                 favicon=self.dashboard_config.get('favicon'),
                 logo=self.dashboard_config.get('logo'),
-                footer_explanation=self.dashboard_config.get('footer_explanation')
+                footer_explanation=self.dashboard_config.get('footer_explanation'),
+                auto_refresh_seconds=self.dashboard_config.get('auto_refresh_seconds', 0)
             )
 
         filename = f"{site_id}.html"

@@ -41,6 +41,7 @@ class TestFlatMonitor:
     favicon: "initial.ico"
     logo: "initial.png"
     sort_by: "yaml_order"
+    auto_refresh_seconds: 120
 
 domains:
   - id: test.site
@@ -65,6 +66,7 @@ domains:
         monitor.config_loader.dashboard.favicon = None
         monitor.config_loader.dashboard.logo = None
         monitor.config_loader.dashboard.sort_by = "yaml_order"
+        monitor.config_loader.dashboard.auto_refresh_seconds = 0
         
         # Create a mock renderer with a real dict for dashboard_config
         monitor.renderer = Mock()
@@ -75,7 +77,8 @@ domains:
             'footer_links': [],
             'favicon': None,
             'logo': None,
-            'sort_by': 'yaml_order'
+            'sort_by': 'yaml_order',
+            'auto_refresh_seconds': 0
         }
         
         # Call the method under test - this would fail with NameError if yaml not imported
@@ -90,6 +93,7 @@ domains:
         assert monitor.renderer.dashboard_config['favicon'] == "initial.ico"
         assert monitor.renderer.dashboard_config['logo'] == "initial.png"
         assert monitor.renderer.dashboard_config['sort_by'] == "yaml_order"
+        assert monitor.renderer.dashboard_config['auto_refresh_seconds'] == 120
 
     def test_reload_dashboard_config_missing_file(self, tmp_path):
         """Test that _reload_dashboard_config handles missing config file gracefully."""
@@ -116,9 +120,11 @@ domains:
         monitor.config_loader.dashboard.favicon = None
         monitor.config_loader.dashboard.logo = None
         monitor.config_loader.dashboard.sort_by = "yaml_order"
+        monitor.config_loader.dashboard.auto_refresh_seconds = 0
         
         original_config = {'title': 'Original', 'header_text': None, 'announcement': None,
-                          'footer_links': [], 'favicon': None, 'logo': None, 'sort_by': 'yaml_order'}
+                          'footer_links': [], 'favicon': None, 'logo': None, 'sort_by': 'yaml_order',
+                          'auto_refresh_seconds': 0}
         monitor.renderer = Mock()
         monitor.renderer.dashboard_config = original_config.copy()
         
@@ -156,9 +162,11 @@ domains:
         monitor.config_loader.dashboard.favicon = None
         monitor.config_loader.dashboard.logo = None
         monitor.config_loader.dashboard.sort_by = "yaml_order"
+        monitor.config_loader.dashboard.auto_refresh_seconds = 0
         
         original_config = {'title': 'Original', 'header_text': None, 'announcement': None,
-                          'footer_links': [], 'favicon': None, 'logo': None, 'sort_by': 'yaml_order'}
+                          'footer_links': [], 'favicon': None, 'logo': None, 'sort_by': 'yaml_order',
+                          'auto_refresh_seconds': 0}
         monitor.renderer = Mock()
         monitor.renderer.dashboard_config = original_config.copy()
         

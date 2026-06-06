@@ -6,6 +6,7 @@ YAML loading and validation for domain configurations.
 
 import os
 import yaml
+import logging
 from typing import Dict, List
 from pathlib import Path
 
@@ -13,6 +14,8 @@ from app.models import DomainConfig, ExpectConfig, ExpectedBotProtection
 from pydantic import BaseModel, Field
 from typing import Optional, List as ListType, Dict
 import re
+
+logger = logging.getLogger(__name__)
 
 
 def expand_env_vars(value: str, context: str = "") -> str:
@@ -85,6 +88,7 @@ class DashboardConfig(BaseModel):
     footer_explanation: Optional[str] = Field(default=None, description="Custom HTML footer text")
     instance_label: Optional[str] = Field(default=None, description="Instance label (e.g., 'US-East Primary')")
     build_interval_seconds: int = Field(default=30, ge=10, description="Minimum interval between dashboard rebuilds in seconds")
+    auto_refresh_seconds: int = Field(default=0, ge=0, description="Auto-refresh interval in seconds (0 = disabled)")
 
 
 class StorageConfig(BaseModel):
@@ -150,7 +154,8 @@ class ConfigLoader:
             header_hint=dashboard_settings.get('header_hint', 'Click any site title for detailed status and logs.'),
             footer_explanation=dashboard_settings.get('footer_explanation'),
             instance_label=dashboard_settings.get('instance_label'),
-            build_interval_seconds=dashboard_settings.get('build_interval_seconds', 30)
+            build_interval_seconds=dashboard_settings.get('build_interval_seconds', 30),
+            auto_refresh_seconds=dashboard_settings.get('auto_refresh_seconds', 0)
         )
 
         # Parse storage configuration
@@ -225,6 +230,13 @@ class ConfigLoader:
     def _parse_storage_config(self, storage_settings: Dict) -> StorageConfig:
         """Parse storage configuration from YAML settings."""
         storage_type = storage_settings.get('type', 'filesystem')
+
+        # Allow FLATMONITOR_STORAGE_TYPE env var to override YAML config
+        env_override = os.environ.get('FLATMONITOR_STORAGE_TYPE')
+        if env_override:
+            storage_type = env_override
+            logger.info(f"Storage type overridden by FLATMONITOR_STORAGE_TYPE env var: {storage_type}")
+
         upload_logs = storage_settings.get('upload_logs', True)
 
         # Parse filesystem config

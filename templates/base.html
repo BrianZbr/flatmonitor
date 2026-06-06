@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     {% if noindex %}<meta name="robots" content="noindex, nofollow">{% endif %}
+    {% if auto_refresh_seconds and auto_refresh_seconds > 0 %}<meta http-equiv="refresh" content="{{ auto_refresh_seconds }}">{% endif %}
     <title>{% block title %}FlatMonitor{% endblock %}</title>
     {% if favicon %}<link rel="icon" href="assets/{{ favicon }}">{% endif %}
     <link rel="stylesheet" href="static/css/style.css">
