@@ -76,6 +76,7 @@ Override config defaults via environment:
 | `FLATMONITOR_DATA_DIR` | Data directory (default: `data/`) |
 | `FLATMONITOR_OUTPUT_DIR` | Dashboard output (default: `public/`) |
 | `FLATMONITOR_WORKERS` | Worker threads (default: 10) |
+| `FLATMONITOR_INSTANCE_LABEL` | Override for dashboard instance label (shows in footer, e.g. "US-East Primary") |
 
 ### Storage Credentials (Recommended)
 

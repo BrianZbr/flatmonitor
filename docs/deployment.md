@@ -82,6 +82,59 @@ docker compose up -d caddy
 
 The dashboard is generated at `./public/index.html`. Mount this directory to any web server (nginx, Caddy, S3, etc.).
 
+### Multi-Instance / Config Repo Deployment
+
+For managing multiple instances (primary, backup) sharing a config repo:
+
+```
+project/
+├── flatmonitor/              # cloned app repo
+├── slum-flatmonitor-config/  # cloned config repo (domains.yaml, assets, docker-compose.prod.yml)
+├── data/                     # persistent monitoring data
+├── public/                   # dashboard output
+└── .env                      # per-instance secrets (gitignored)
+```
+
+Per-instance `.env` sets `FLATMONITOR_INSTANCE_LABEL` and R2 bucket credentials:
+
+```
+FLATMONITOR_INSTANCE_LABEL=US-East Primary
+FLATMONITOR_R2_BUCKET_NAME=slum-rego-us-east
+FLATMONITOR_R2_ACCOUNT_ID=...
+FLATMONITOR_R2_ACCESS_KEY_ID=...
+FLATMONITOR_R2_SECRET_ACCESS_KEY=...
+```
+
+`docker-compose.prod.yml` (in config repo) mounts everything from shared repos:
+
+```yaml
+services:
+  flatmonitor:
+    build: ../flatmonitor
+    container_name: flatmonitor-prod
+    restart: unless-stopped
+    volumes:
+      - ./domains.yaml:/app/config/domains.yaml:ro
+      - ./assets:/app/public/assets:ro
+      - ./dmca.html:/app/public/dmca.html:ro
+      - ../data:/app/data
+      - ../public:/app/public
+    env_file:
+      - ../.env
+```
+
+Setup a new instance:
+
+```bash
+git clone https://github.com/BrianZbr/flatmonitor.git
+git clone https://github.com/BrianZbr/slum-flatmonitor-config.git
+cp slum-flatmonitor-config/.env.template .env
+# Edit .env with R2 credentials + instance label
+docker compose -f slum-flatmonitor-config/docker-compose.prod.yml up -d --build
+```
+
+Update workflow: edit `domains.yaml` in the config repo, push, pull on each instance, restart.
+
 ## Manual Docker
 
 If you prefer plain Docker:

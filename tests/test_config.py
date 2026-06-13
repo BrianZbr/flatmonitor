@@ -545,3 +545,87 @@ domains:
             assert loader.storage.r2['public_domain'] == "https://pub-123.r2.dev"
         finally:
             os.unlink(temp_path)
+
+    def test_instance_label_env_var_override(self, monkeypatch):
+        """FLATMONITOR_INSTANCE_LABEL env var overrides YAML value."""
+        monkeypatch.setenv("FLATMONITOR_INSTANCE_LABEL", "US-East Primary")
+
+        yaml_content = """
+settings:
+  dashboard:
+    instance_label: "YAML Label"
+
+domains:
+  - id: test.site
+    url: https://example.com
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(yaml_content)
+            temp_path = f.name
+
+        try:
+            loader = ConfigLoader(temp_path)
+            loader.load()
+            assert loader.dashboard.instance_label == "US-East Primary"
+        finally:
+            os.unlink(temp_path)
+
+    def test_instance_label_env_var_when_not_in_yaml(self, monkeypatch):
+        """FLATMONITOR_INSTANCE_LABEL env var sets label even without YAML value."""
+        monkeypatch.setenv("FLATMONITOR_INSTANCE_LABEL", "Backup Instance")
+
+        yaml_content = """
+domains:
+  - id: test.site
+    url: https://example.com
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(yaml_content)
+            temp_path = f.name
+
+        try:
+            loader = ConfigLoader(temp_path)
+            loader.load()
+            assert loader.dashboard.instance_label == "Backup Instance"
+        finally:
+            os.unlink(temp_path)
+
+    def test_instance_label_no_env_var_uses_yaml(self):
+        """Without FLATMONITOR_INSTANCE_LABEL, YAML value is used."""
+        yaml_content = """
+settings:
+  dashboard:
+    instance_label: "US-Central Backup"
+
+domains:
+  - id: test.site
+    url: https://example.com
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(yaml_content)
+            temp_path = f.name
+
+        try:
+            loader = ConfigLoader(temp_path)
+            loader.load()
+            assert loader.dashboard.instance_label == "US-Central Backup"
+        finally:
+            os.unlink(temp_path)
+
+    def test_instance_label_defaults_to_none(self):
+        """instance_label defaults to None when not set in YAML or env."""
+        yaml_content = """
+domains:
+  - id: test.site
+    url: https://example.com
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(yaml_content)
+            temp_path = f.name
+
+        try:
+            loader = ConfigLoader(temp_path)
+            loader.load()
+            assert loader.dashboard.instance_label is None
+        finally:
+            os.unlink(temp_path)
