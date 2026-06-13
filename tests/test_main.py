@@ -182,3 +182,68 @@ domains:
         
         # Config should remain unchanged after failed reload
         assert monitor.renderer.dashboard_config == original_config
+
+    def test_upload_static_files_uploads_configured_files(self, tmp_path):
+        """_upload_static_files uploads each file in static_files list."""
+        output_dir = tmp_path / "public"
+        output_dir.mkdir()
+        dmca = output_dir / "dmca.html"
+        dmca.write_text("<html>DMCA Notice</html>")
+        robots = output_dir / "robots.txt"
+        robots.write_text("User-agent: *\nDisallow: /")
+
+        monitor = FlatMonitor()
+        monitor.config_loader = Mock()
+        monitor.config_loader.dashboard.static_files = ["dmca.html", "robots.txt"]
+        monitor.output_dir = str(output_dir)
+
+        mock_backend = Mock()
+        monitor._upload_static_files(mock_backend)
+
+        assert mock_backend.write_file.call_count == 2
+        dmca_call = mock_backend.write_file.call_args_list[0]
+        assert dmca_call[0][0] == "dmca.html"
+        assert "<html>DMCA Notice</html>" in dmca_call[0][1]
+        assert dmca_call[1]['content_type'] == "text/html"
+
+        robots_call = mock_backend.write_file.call_args_list[1]
+        assert robots_call[0][0] == "robots.txt"
+        assert "User-agent:" in robots_call[0][1]
+
+    def test_upload_static_files_skips_missing_files(self, tmp_path):
+        """_upload_static_files skips files that don't exist."""
+        output_dir = tmp_path / "public"
+        output_dir.mkdir()
+        # Only create robots.txt, not dmca.html
+        robots = output_dir / "robots.txt"
+        robots.write_text("User-agent: *")
+
+        monitor = FlatMonitor()
+        monitor.config_loader = Mock()
+        monitor.config_loader.dashboard.static_files = ["dmca.html", "robots.txt"]
+        monitor.output_dir = str(output_dir)
+
+        mock_backend = Mock()
+        with patch('app.main.logger') as mock_logger:
+            monitor._upload_static_files(mock_backend)
+
+        # Only robots should be uploaded
+        mock_backend.write_file.assert_called_once()
+        assert mock_backend.write_file.call_args[0][0] == "robots.txt"
+        # Warning should be logged for dmca.html
+        mock_logger.warning.assert_called_once()
+
+    def test_upload_static_files_empty_list_does_nothing(self, tmp_path):
+        """_upload_static_files is a no-op with empty static_files."""
+        output_dir = tmp_path / "public"
+        output_dir.mkdir()
+
+        monitor = FlatMonitor()
+        monitor.config_loader = Mock()
+        monitor.config_loader.dashboard.static_files = []
+        monitor.output_dir = str(output_dir)
+
+        mock_backend = Mock()
+        monitor._upload_static_files(mock_backend)
+
+        mock_backend.write_file.assert_not_called()

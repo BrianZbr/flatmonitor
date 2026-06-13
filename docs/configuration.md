@@ -38,6 +38,8 @@ settings:
     sort_by: "yaml_order"                      # Display order: 'yaml_order', 'severity', or 'alphabetical'
     instance_label: "US-East Primary"            # Optional label for this instance (shows in footer)
     build_interval_seconds: 30                   # Minimum seconds between dashboard rebuilds (default: 30, min: 10)
+    static_files:                                # Optional static HTML files to upload to cloud storage
+      - dmca.html
 ```
 
 **Notes:**
@@ -48,8 +50,9 @@ settings:
   - `severity`: Sites and domains sorted by health status severity (DOWN → DEGRADED → UP)
 - `instance_label`: Useful for multi-instance setups (primary/secondary) to identify which instance generated the dashboard
 - `build_interval_seconds`: Controls how often the static HTML dashboard is rebuilt and uploaded to R2. Higher values reduce R2 operations but slow down dashboard updates. Minimum is 10 seconds.
+- `static_files`: List of filenames in the `public/` root directory to upload alongside the dashboard. Files are uploaded with auto-detected content type and `max-age=3600` cache headers. Useful for static pages like DMCA notices, terms of service, or robots.txt that need to be served from cloud storage.
 
-**Auto-Reload:** Dashboard settings are automatically reloaded before each rebuild. Changes to `title`, `logo`, `favicon`, `header_text`, `announcement`, `footer_links`, `sort_by`, `instance_label`, and `build_interval_seconds` take effect without restarting the application. Domain and storage changes still require a restart.
+**Auto-Reload:** Dashboard settings are automatically reloaded before each rebuild. Changes to `title`, `logo`, `favicon`, `header_text`, `announcement`, `footer_links`, `sort_by`, `instance_label`, `build_interval_seconds`, and `static_files` take effect without restarting the application. Domain and storage changes still require a restart.
 
 ## Storage Settings
 

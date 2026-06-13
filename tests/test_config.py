@@ -629,3 +629,45 @@ domains:
             assert loader.dashboard.instance_label is None
         finally:
             os.unlink(temp_path)
+
+    def test_static_files_defaults_to_empty(self):
+        """static_files defaults to empty list when not set."""
+        yaml_content = """
+domains:
+  - id: test.site
+    url: https://example.com
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(yaml_content)
+            temp_path = f.name
+
+        try:
+            loader = ConfigLoader(temp_path)
+            loader.load()
+            assert loader.dashboard.static_files == []
+        finally:
+            os.unlink(temp_path)
+
+    def test_static_files_from_config(self):
+        """static_files can be set via config."""
+        yaml_content = """
+settings:
+  dashboard:
+    static_files:
+      - dmca.html
+      - robots.txt
+
+domains:
+  - id: test.site
+    url: https://example.com
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(yaml_content)
+            temp_path = f.name
+
+        try:
+            loader = ConfigLoader(temp_path)
+            loader.load()
+            assert loader.dashboard.static_files == ["dmca.html", "robots.txt"]
+        finally:
+            os.unlink(temp_path)

@@ -10,6 +10,7 @@ import logging
 import signal
 import sys
 import traceback
+import mimetypes
 import yaml
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
@@ -102,7 +103,8 @@ class FlatMonitor:
             'build_interval_seconds': self.config_loader.dashboard.build_interval_seconds,
             'auto_refresh_seconds': self.config_loader.dashboard.auto_refresh_seconds,
             'instance_label': self.config_loader.dashboard.instance_label,
-            'sort_by': self.config_loader.dashboard.sort_by
+            'sort_by': self.config_loader.dashboard.sort_by,
+            'static_files': self.config_loader.dashboard.static_files
         }
         self.renderer = Renderer(
             output_dir=self.output_dir,
@@ -233,6 +235,9 @@ class FlatMonitor:
                         logger.info(f"Uploading static files from {static_path} (exists: {static_path.exists()})")
                         storage_backend.upload_static(static_path)
 
+                        # Upload user-configured static files from public/ root
+                        self._upload_static_files(storage_backend)
+
                     new_data = False
                     logger.info("Dashboard rebuilt")
 
@@ -245,6 +250,23 @@ class FlatMonitor:
 
         # Shutdown
         self._shutdown()
+
+    def _upload_static_files(self, storage_backend) -> None:
+        """Upload user-configured static files (e.g., dmca.html) from public/ root."""
+        for fname in self.config_loader.dashboard.static_files:
+            fpath = Path(self.output_dir) / fname
+            if not fpath.exists():
+                logger.warning(f"Static file configured but not found: {fpath}")
+                continue
+            content = fpath.read_text(encoding='utf-8')
+            if not content.strip():
+                logger.warning(f"Static file is empty: {fpath}")
+                continue
+            content_type, _ = mimetypes.guess_type(str(fpath))
+            if not content_type:
+                content_type = "text/html"
+            storage_backend.write_file(fname, content, content_type=content_type)
+            logger.info(f"Static file uploaded: {fname}")
 
     def _reload_dashboard_config(self) -> None:
         """Reload dashboard config from YAML to pick up changes without restart.
@@ -276,7 +298,8 @@ class FlatMonitor:
                 'footer_explanation': dashboard_settings.get('footer_explanation', self.config_loader.dashboard.footer_explanation),
                 'build_interval_seconds': dashboard_settings.get('build_interval_seconds', self.config_loader.dashboard.build_interval_seconds),
                 'auto_refresh_seconds': dashboard_settings.get('auto_refresh_seconds', self.config_loader.dashboard.auto_refresh_seconds),
-                'instance_label': dashboard_settings.get('instance_label', self.config_loader.dashboard.instance_label)
+                'instance_label': dashboard_settings.get('instance_label', self.config_loader.dashboard.instance_label),
+                'static_files': dashboard_settings.get('static_files', self.config_loader.dashboard.static_files)
             }
             # Update rebuild throttle if changed
             self.renderer.min_build_interval = self.renderer.dashboard_config.get('build_interval_seconds', 30)

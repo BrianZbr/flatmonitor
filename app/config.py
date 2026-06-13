@@ -89,6 +89,7 @@ class DashboardConfig(BaseModel):
     instance_label: Optional[str] = Field(default=None, description="Instance label (e.g., 'US-East Primary')")
     build_interval_seconds: int = Field(default=30, ge=10, description="Minimum interval between dashboard rebuilds in seconds")
     auto_refresh_seconds: int = Field(default=120, ge=0, description="Auto-refresh interval in seconds (0 = disabled)")
+    static_files: ListType[str] = Field(default_factory=list, description="Static HTML files in public/ root to upload to cloud storage")
 
 
 class StorageConfig(BaseModel):
@@ -155,7 +156,8 @@ class ConfigLoader:
             footer_explanation=dashboard_settings.get('footer_explanation'),
             instance_label=dashboard_settings.get('instance_label'),
             build_interval_seconds=dashboard_settings.get('build_interval_seconds', 30),
-            auto_refresh_seconds=dashboard_settings.get('auto_refresh_seconds', 120)
+            auto_refresh_seconds=dashboard_settings.get('auto_refresh_seconds', 120),
+            static_files=dashboard_settings.get('static_files', [])
         )
 
         # Allow FLATMONITOR_INSTANCE_LABEL env var to override YAML config
