@@ -158,6 +158,12 @@ class ConfigLoader:
             auto_refresh_seconds=dashboard_settings.get('auto_refresh_seconds', 120)
         )
 
+        # Allow FLATMONITOR_INSTANCE_LABEL env var to override YAML config
+        env_instance_label = os.environ.get('FLATMONITOR_INSTANCE_LABEL')
+        if env_instance_label:
+            self.dashboard.instance_label = env_instance_label
+            logger.info(f"Instance label overridden by FLATMONITOR_INSTANCE_LABEL: {env_instance_label}")
+
         # Parse storage configuration
         storage_settings = settings.get('storage', {})
         self.storage = self._parse_storage_config(storage_settings)
