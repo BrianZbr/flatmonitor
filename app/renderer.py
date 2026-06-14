@@ -26,6 +26,9 @@ class Renderer:
         self.output_dir = Path(output_dir)
         self.noindex = noindex
         self.dashboard_config = dashboard_config or {}
+        # Auto-use logo as favicon if favicon not explicitly set
+        if not self.dashboard_config.get('favicon') and self.dashboard_config.get('logo'):
+            self.dashboard_config['favicon'] = self.dashboard_config['logo']
         self.data_dir = data_dir
 
         # Initialize storage backend (default to filesystem)
