@@ -36,6 +36,47 @@ sudo systemctl start flatmonitor
 sudo systemctl status flatmonitor
 ```
 
+## Health Endpoint
+
+FlatMonitor can expose an internal HTTP health endpoint for monitoring by external tools (uptime monitors, orchestrators, etc.).
+
+Enable it by setting `FLATMONITOR_HEALTH_PORT`:
+
+```bash
+FLATMONITOR_HEALTH_PORT=9876 python -m app.main
+```
+
+The endpoint serves `GET /health` (and `GET /`) with JSON:
+
+- **HTTP 200** — All components healthy
+- **HTTP 503** — A component has exceeded its consecutive-failure threshold (default: 3)
+
+Response includes per-component status for writes (CSV logging) and uploads (cloud storage):
+
+```json
+{
+  "status": "unhealthy",
+  "timestamp": "2026-07-16T23:18:55+00:00",
+  "components": {
+    "write": {
+      "healthy": false,
+      "consecutive_failures": 3,
+      "last_error": "disk full",
+      "last_attempt": "2026-07-16T23:18:55+00:00"
+    },
+    "upload": {
+      "healthy": true,
+      "consecutive_failures": 0,
+      "last_error": null,
+      "last_attempt": null
+    }
+  },
+  "unhealthy_reason": "Write failures: 3 consecutive (last error: disk full)"
+}
+```
+
+Unknown paths return HTTP 404. The endpoint is opt-in — it does not start unless a port is configured.
+
 ## Nginx Configuration
 
 Serve the static dashboard:

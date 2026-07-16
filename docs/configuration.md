@@ -80,6 +80,7 @@ Override config defaults via environment:
 | `FLATMONITOR_OUTPUT_DIR` | Dashboard output (default: `public/`) |
 | `FLATMONITOR_WORKERS` | Worker threads (default: 10) |
 | `FLATMONITOR_INSTANCE_LABEL` | Override for dashboard instance label (shows in footer, e.g. "US-East Primary") |
+| `FLATMONITOR_HEALTH_PORT` | Port for the internal health HTTP endpoint (optional — not set by default). When set, serves `GET /health` returning JSON with write/upload status, HTTP 200 if healthy, 503 if unhealthy. |
 
 ### Storage Credentials (Recommended)
 

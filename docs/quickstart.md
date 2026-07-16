@@ -41,6 +41,10 @@ python -m app.main
 # Or run in background
 python -m app.main &
 
+# Enable internal health endpoint (optional):
+FLATMONITOR_HEALTH_PORT=9876 python -m app.main
+# Try: curl http://localhost:9876/health
+
 # Dashboard will be generated at public/index.html
 # Serve via simple HTTP server:
 python -m http.server 8080 --directory public/
