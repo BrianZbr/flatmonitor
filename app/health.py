@@ -1,0 +1,213 @@
+"""
+FlatMonitor - Health Check Module
+
+Minimal health tracking and HTTP endpoint for monitoring core functionality.
+"""
+
+import json
+import logging
+import threading
+import time
+from datetime import datetime, timezone
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+
+class HealthChecker:
+    """
+    Tracks health of core operations (logging, uploading).
+    
+    Simple approach: track consecutive failures for each component.
+    Mark unhealthy after N consecutive failures, recover on first success.
+    """
+
+    def __init__(self, failure_threshold: int = 3):
+        self.failure_threshold = failure_threshold
+
+        # Write health tracking
+        self._write_failures = 0
+        self._write_last_error: Optional[str] = None
+        self._write_last_attempt: Optional[str] = None
+
+        # Upload health tracking
+        self._upload_failures = 0
+        self._upload_last_error: Optional[str] = None
+        self._upload_last_attempt: Optional[str] = None
+
+        # Overall health
+        self._healthy = True
+        self._unhealthy_reason: Optional[str] = None
+
+        # Thread safety
+        self._lock = threading.Lock()
+
+    def report_write_success(self) -> None:
+        """Report a successful write operation."""
+        with self._lock:
+            self._write_failures = 0
+            self._write_last_error = None
+            self._write_last_attempt = datetime.now(timezone.utc).isoformat()
+            self._update_health()
+
+    def report_write_failure(self, error: str) -> None:
+        """Report a write failure."""
+        with self._lock:
+            self._write_failures += 1
+            self._write_last_error = error
+            self._write_last_attempt = datetime.now(timezone.utc).isoformat()
+            self._update_health()
+
+    def report_upload_success(self) -> None:
+        """Report a successful upload operation."""
+        with self._lock:
+            self._upload_failures = 0
+            self._upload_last_error = None
+            self._upload_last_attempt = datetime.now(timezone.utc).isoformat()
+            self._update_health()
+
+    def report_upload_failure(self, error: str) -> None:
+        """Report an upload failure."""
+        with self._lock:
+            self._upload_failures += 1
+            self._upload_last_error = error
+            self._upload_last_attempt = datetime.now(timezone.utc).isoformat()
+            self._update_health()
+
+    def _update_health(self) -> None:
+        """Update overall health status based on component health."""
+        if self._write_failures >= self.failure_threshold:
+            self._healthy = False
+            self._unhealthy_reason = (
+                f"Write failures: {self._write_failures} consecutive "
+                f"(last error: {self._write_last_error})"
+            )
+        elif self._upload_failures >= self.failure_threshold:
+            self._healthy = False
+            self._unhealthy_reason = (
+                f"Upload failures: {self._upload_failures} consecutive "
+                f"(last error: {self._upload_last_error})"
+            )
+        else:
+            self._healthy = True
+            self._unhealthy_reason = None
+
+    @property
+    def is_healthy(self) -> bool:
+        """Check if system is healthy."""
+        with self._lock:
+            return self._healthy
+
+    def get_status(self) -> dict:
+        """Get health status as a dictionary."""
+        with self._lock:
+            return {
+                "status": "healthy" if self._healthy else "unhealthy",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "components": {
+                    "write": {
+                        "healthy": self._write_failures < self.failure_threshold,
+                        "consecutive_failures": self._write_failures,
+                        "last_error": self._write_last_error,
+                        "last_attempt": self._write_last_attempt,
+                    },
+                    "upload": {
+                        "healthy": self._upload_failures < self.failure_threshold,
+                        "consecutive_failures": self._upload_failures,
+                        "last_error": self._upload_last_error,
+                        "last_attempt": self._upload_last_attempt,
+                    },
+                },
+                "unhealthy_reason": self._unhealthy_reason,
+            }
+
+    def get_status_json(self) -> str:
+        """Get health status as JSON string."""
+        return json.dumps(self.get_status())
+
+
+class HealthHandler(BaseHTTPRequestHandler):
+    """Simple HTTP request handler for health endpoint."""
+
+    health_checker: HealthChecker = None  # Set by server
+
+    def do_GET(self):
+        """Handle GET requests."""
+        if self.path == "/health" or self.path == "/":
+            self._handle_health()
+        else:
+            self.send_response(404)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Not found"}).encode())
+
+    def _handle_health(self):
+        """Handle health check requests."""
+        if self.health_checker is None:
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Health checker not initialized"}).encode())
+            return
+
+        healthy = self.health_checker.is_healthy
+        status_code = 200 if healthy else 503
+
+        self.send_response(status_code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(self.health_checker.get_status_json().encode())
+
+    def log_message(self, format, *args):
+        """Suppress default logging."""
+        logger.debug(f"Health endpoint: {format % args}")
+
+
+class HealthServer:
+    """
+    Lightweight HTTP server for health checks.
+    
+    Runs in a background thread and serves the /health endpoint.
+    """
+
+    def __init__(self, port: int = 8080, failure_threshold: int = 3):
+        self.port = port
+        self.health_checker = HealthChecker(failure_threshold=failure_threshold)
+        self._server: Optional[HTTPServer] = None
+        self._thread: Optional[threading.Thread] = None
+
+    def start(self) -> None:
+        """Start the health check server in a background thread."""
+        try:
+            self._server = HTTPServer(("0.0.0.0", self.port), HealthHandler)
+            HealthHandler.health_checker = self.health_checker
+
+            self._thread = threading.Thread(
+                target=self._server.serve_forever,
+                daemon=True,
+                name="HealthServer"
+            )
+            self._thread.start()
+
+            logger.info(f"Health check server started on port {self.port}")
+
+        except OSError as e:
+            logger.warning(f"Could not start health check server on port {self.port}: {e}")
+            logger.warning("Health endpoint will not be available")
+
+    def stop(self) -> None:
+        """Stop the health check server."""
+        if self._server:
+            self._server.shutdown()
+            self._server = None
+
+        if self._thread:
+            self._thread.join(timeout=5)
+            self._thread = None
+
+    @property
+    def checker(self) -> HealthChecker:
+        """Get the health checker instance."""
+        return self.health_checker

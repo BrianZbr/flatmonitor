@@ -27,6 +27,7 @@ from app.storage import Storage
 from app.aggregator import Aggregator
 from app.renderer import Renderer
 from app.storage_backends import create_storage_backend
+from app.health import HealthServer
 
 
 # Configure logging
@@ -42,12 +43,14 @@ class FlatMonitor:
 
     def __init__(self, config_path: str = "config/domains.yaml",
                  data_dir: str = "data", output_dir: str = "public",
-                 worker_count: int = 10, rotation_interval: Optional[int] = None):
+                 worker_count: int = 10, rotation_interval: Optional[int] = None,
+                 health_port: Optional[int] = None):
         self.config_path = config_path
         self.data_dir = data_dir
         self.output_dir = output_dir
         self.worker_count = worker_count
         self._rotation_interval_param = rotation_interval  # Store constructor override
+        self._health_port = health_port  # Store health port override
 
         # Queues
         self.job_queue: Queue = Queue()
@@ -59,6 +62,7 @@ class FlatMonitor:
         self.storage: Optional[Storage] = None
         self.aggregator: Optional[Aggregator] = None
         self.renderer: Optional[Renderer] = None
+        self.health_server: Optional[HealthServer] = None
 
         # Threading
         self.workers: list = []
@@ -82,6 +86,12 @@ class FlatMonitor:
 
         # Load configuration
         self._load_config()
+
+        # Initialize health server (if port configured)
+        health_port = self._health_port or self._get_health_port_from_env()
+        if health_port:
+            self.health_server = HealthServer(port=health_port)
+            self.health_server.start()
 
         # Initialize components
         self.storage = Storage(data_dir=self.data_dir, retention_days=self.config_loader.retention_days)
@@ -122,6 +132,16 @@ class FlatMonitor:
 
         # Run main loop
         self._main_loop()
+
+    def _get_health_port_from_env(self) -> Optional[int]:
+        """Get health server port from environment variable."""
+        try:
+            port = os.environ.get('FLATMONITOR_HEALTH_PORT')
+            if port:
+                return int(port)
+        except (ValueError, TypeError):
+            pass
+        return None
 
     def _load_config(self) -> None:
         """Load domain configuration."""
@@ -189,10 +209,11 @@ class FlatMonitor:
                     logger.debug(f"Scheduled {jobs_added} jobs")
 
                 # 2. Process results (Single-threaded writing)
+                health_checker = self.health_server.checker if self.health_server else None
                 while not self.results_queue.empty():
                     try:
                         result = self.results_queue.get(timeout=0.1)
-                        self.storage.append_csv(result)
+                        self.storage.append_csv(result, health_checker=health_checker)
                         new_data = True
                         self.results_queue.task_done()
                     except Exception as e:
@@ -217,12 +238,20 @@ class FlatMonitor:
                         storage_backend = self.renderer.storage
                         data_path = Path(self.data_dir)
                         result = storage_backend.upload_logs(data_path)
+                        health_checker = self.health_server.checker if self.health_server else None
                         if result['failed'] > 0:
                             logger.warning(f"Log upload had {result['failed']} failures out of {result['total']} files")
-                        elif result['uploaded'] == 0 and result['total'] > 0:
-                            logger.warning(f"No logs uploaded (all {result['total']} files skipped or empty)")
+                            if health_checker:
+                                health_checker.report_upload_failure(
+                                    f"{result['failed']} log upload failures"
+                                )
                         else:
-                            logger.info(f"Log upload complete: {result['uploaded']} uploaded, {result['skipped']} skipped, {result['failed']} failed")
+                            if result['uploaded'] == 0 and result['total'] > 0:
+                                logger.warning(f"No logs uploaded (all {result['total']} files skipped or empty)")
+                            else:
+                                logger.info(f"Log upload complete: {result['uploaded']} uploaded, {result['skipped']} skipped, {result['failed']} failed")
+                            if health_checker:
+                                health_checker.report_upload_success()
 
                     # Upload assets if using cloud storage (R2/S3 backends)
                     if self.config_loader.storage.type in ('r2', 's3'):
@@ -353,6 +382,10 @@ class FlatMonitor:
             self.config_loader.get_sites()
         )
         self.renderer.build_static_site(aggregated)
+
+        # Stop health server
+        if self.health_server:
+            self.health_server.stop()
 
         # Final log upload if enabled
         if self.config_loader.storage.upload_logs:

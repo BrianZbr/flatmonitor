@@ -16,6 +16,12 @@ from app.models import Result, DomainConfig
 
 logger = logging.getLogger(__name__)
 
+
+class StorageResult:
+    """Result of a storage operation."""
+    SUCCESS = "success"
+    FAILURE = "failure"
+
 class Storage:
     """Manages CSV storage with rotation and retention."""
 
@@ -34,22 +40,42 @@ class Storage:
         self.headers = Result.get_csv_headers()
         self.schema_version = 2  # Increment on breaking changes
 
-    def append_csv(self, result: Result) -> None:
-        """Append a result to the appropriate CSV file."""
+    def append_csv(self, result: Result, health_checker=None) -> str:
+        """
+        Append a result to the appropriate CSV file.
+
+        Args:
+            result: The result to append
+            health_checker: Optional HealthChecker to report write status
+
+        Returns:
+            StorageResult.SUCCESS or StorageResult.FAILURE
+        """
         domain_path = self._get_domain_path(result.site_id, result.domain_id)
         domain_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Check if file exists to write headers
         file_exists = domain_path.exists()
 
-        with open(domain_path, "a", newline="") as f:
-            writer = csv.writer(f)
-            if not file_exists:
-                # Write version comment and schema for future compatibility
-                f.write(f"# version: {self.schema_version}\n")
-                f.write(f"# schema: {','.join(self.headers)}\n")
-                writer.writerow(self.headers)
-            writer.writerow(result.to_csv_row())
+        try:
+            with open(domain_path, "a", newline="") as f:
+                writer = csv.writer(f)
+                if not file_exists:
+                    # Write version comment and schema for future compatibility
+                    f.write(f"# version: {self.schema_version}\n")
+                    f.write(f"# schema: {','.join(self.headers)}\n")
+                    writer.writerow(self.headers)
+                writer.writerow(result.to_csv_row())
+
+            if health_checker:
+                health_checker.report_write_success()
+            return StorageResult.SUCCESS
+
+        except OSError as e:
+            logger.error(f"Failed to write to {domain_path}: {e}")
+            if health_checker:
+                health_checker.report_write_failure(str(e))
+            return StorageResult.FAILURE
 
     def read_domain_results(self, site_id: str, domain_id: str,
                            hours: int = 4) -> List[Result]:
