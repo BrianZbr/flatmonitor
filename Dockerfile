@@ -9,6 +9,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY app/ ./app/
 COPY templates/ ./templates/
+COPY public/ ./public/
 
 # Environment variables
 ENV PYTHONUNBUFFERED=1
