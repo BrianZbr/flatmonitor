@@ -71,6 +71,11 @@ class Runner:
         "PerimeterX": {
             "status_codes": {403, 429},
             "headers": ["x-perimeter-x", "px-captcha", "perimeterx"]
+        },
+        "DiamWall": {
+            "status_codes": {513},
+            "body": ["diamwall", "verifying your browser"],
+            "server_header": "diamwall"
         }
     }
 
@@ -83,7 +88,7 @@ class Runner:
     ]
 
     # Status codes commonly used for bot protection
-    BOT_PROTECTION_STATUS_CODES = {403, 429, 503}
+    BOT_PROTECTION_STATUS_CODES = {403, 429, 503, 513}
 
     def __init__(self, data_dir: str = "data"):
         self.session = requests.Session()

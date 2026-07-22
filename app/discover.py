@@ -229,6 +229,16 @@ class DiscoveryRunner(Runner):
                 'context': "PerimeterX (HUMAN) bot protection detected"
             })
 
+        # DiamWall
+        if 'server' in headers_lower:
+            server = headers_lower['server'].lower()
+            if 'diamwall' in server:
+                found.append({
+                    'source': 'header',
+                    'indicator': 'diamwall',
+                    'context': f"Server header indicates DiamWall: {headers_lower['server']}"
+                })
+
         return found
 
 
