@@ -63,6 +63,12 @@
   #     output_dir: "public"
   #     enabled: true  # Set to false to skip local file output
 #   #     enabled: true  # Set to false to skip local file output
+#
+#   # External heartbeat monitoring (optional)
+#   # Pings a URL periodically; failures tracked in the health endpoint
+#   # health:
+#   #   heartbeat_url: "https://hc-ping.com/your-uuid-here"
+#   #   heartbeat_interval_seconds: 300  # Default: 60
 
 domains:
   # Example: Monitoring a core website

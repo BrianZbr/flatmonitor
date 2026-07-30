@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Optional
 
+import requests
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,6 +37,11 @@ class HealthChecker:
         self._upload_failures = 0
         self._upload_last_error: Optional[str] = None
         self._upload_last_attempt: Optional[str] = None
+
+        # Heartbeat health tracking
+        self._heartbeat_failures = 0
+        self._heartbeat_last_error: Optional[str] = None
+        self._heartbeat_last_attempt: Optional[str] = None
 
         # Overall health
         self._healthy = True
@@ -75,6 +82,22 @@ class HealthChecker:
             self._upload_last_attempt = datetime.now(timezone.utc).isoformat()
             self._update_health()
 
+    def report_heartbeat_success(self) -> None:
+        """Report a successful heartbeat."""
+        with self._lock:
+            self._heartbeat_failures = 0
+            self._heartbeat_last_error = None
+            self._heartbeat_last_attempt = datetime.now(timezone.utc).isoformat()
+            self._update_health()
+
+    def report_heartbeat_failure(self, error: str) -> None:
+        """Report a heartbeat failure."""
+        with self._lock:
+            self._heartbeat_failures += 1
+            self._heartbeat_last_error = error
+            self._heartbeat_last_attempt = datetime.now(timezone.utc).isoformat()
+            self._update_health()
+
     def _update_health(self) -> None:
         """Update overall health status based on component health."""
         if self._write_failures >= self.failure_threshold:
@@ -88,6 +111,12 @@ class HealthChecker:
             self._unhealthy_reason = (
                 f"Upload failures: {self._upload_failures} consecutive "
                 f"(last error: {self._upload_last_error})"
+            )
+        elif self._heartbeat_failures >= self.failure_threshold:
+            self._healthy = False
+            self._unhealthy_reason = (
+                f"Heartbeat failures: {self._heartbeat_failures} consecutive "
+                f"(last error: {self._heartbeat_last_error})"
             )
         else:
             self._healthy = True
@@ -117,6 +146,12 @@ class HealthChecker:
                         "consecutive_failures": self._upload_failures,
                         "last_error": self._upload_last_error,
                         "last_attempt": self._upload_last_attempt,
+                    },
+                    "heartbeat": {
+                        "healthy": self._heartbeat_failures < self.failure_threshold,
+                        "consecutive_failures": self._heartbeat_failures,
+                        "last_error": self._heartbeat_last_error,
+                        "last_attempt": self._heartbeat_last_attempt,
                     },
                 },
                 "unhealthy_reason": self._unhealthy_reason,
@@ -165,6 +200,59 @@ class HealthHandler(BaseHTTPRequestHandler):
         logger.debug(f"Health endpoint: {format % args}")
 
 
+class HeartbeatPinger:
+    """Sends periodic heartbeat GET requests to a configured URL."""
+
+    def __init__(self, url: str, interval: int, health_checker: HealthChecker):
+        self.url = url
+        self.interval = interval
+        self.health_checker = health_checker
+        self._stop_event = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+
+    def start(self) -> None:
+        """Start the heartbeat pinger in a background thread."""
+        if self._thread is not None:
+            return
+        self._stop_event.clear()
+        self._thread = threading.Thread(
+            target=self._loop,
+            daemon=True,
+            name="HeartbeatPinger",
+        )
+        self._thread.start()
+        logger.info(f"Heartbeat pinger started: {self.url} every {self.interval}s")
+
+    def stop(self) -> None:
+        """Stop the heartbeat pinger."""
+        self._stop_event.set()
+        if self._thread:
+            self._thread.join(timeout=5)
+            self._thread = None
+        logger.info("Heartbeat pinger stopped")
+
+    def _loop(self) -> None:
+        """Main loop for sending heartbeats."""
+        while not self._stop_event.is_set():
+            try:
+                self._send_heartbeat()
+            except Exception as e:
+                logger.error(f"Unexpected heartbeat error: {e}")
+                self.health_checker.report_heartbeat_failure(str(e))
+            self._stop_event.wait(self.interval)
+
+    def _send_heartbeat(self) -> None:
+        """Send a single heartbeat ping."""
+        try:
+            resp = requests.get(self.url, timeout=10)
+            resp.raise_for_status()
+            self.health_checker.report_heartbeat_success()
+            logger.debug(f"Heartbeat sent to {self.url} (status {resp.status_code})")
+        except requests.RequestException as e:
+            logger.warning(f"Heartbeat failed to {self.url}: {e}")
+            self.health_checker.report_heartbeat_failure(str(e))
+
+
 class HealthServer:
     """
     Lightweight HTTP server for health checks.
@@ -172,11 +260,20 @@ class HealthServer:
     Runs in a background thread and serves the /health endpoint.
     """
 
-    def __init__(self, port: int = 8080, failure_threshold: int = 3):
+    def __init__(self, port: int = 8080, failure_threshold: int = 3,
+                 heartbeat_url: Optional[str] = None,
+                 heartbeat_interval: int = 60):
         self.port = port
         self.health_checker = HealthChecker(failure_threshold=failure_threshold)
         self._server: Optional[HTTPServer] = None
         self._thread: Optional[threading.Thread] = None
+        self._heartbeat_pinger: Optional[HeartbeatPinger] = None
+        if heartbeat_url:
+            self._heartbeat_pinger = HeartbeatPinger(
+                url=heartbeat_url,
+                interval=heartbeat_interval,
+                health_checker=self.health_checker,
+            )
 
     def start(self) -> None:
         """Start the health check server in a background thread."""
@@ -193,12 +290,18 @@ class HealthServer:
 
             logger.info(f"Health check server started on port {self.port}")
 
+            if self._heartbeat_pinger:
+                self._heartbeat_pinger.start()
+
         except OSError as e:
             logger.warning(f"Could not start health check server on port {self.port}: {e}")
             logger.warning("Health endpoint will not be available")
 
     def stop(self) -> None:
         """Stop the health check server."""
+        if self._heartbeat_pinger:
+            self._heartbeat_pinger.stop()
+
         if self._server:
             self._server.shutdown()
             self._server = None

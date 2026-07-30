@@ -62,6 +62,21 @@ settings:
   retention_days: 7                 # Keep 7 days of archives
 ```
 
+## Health Settings
+
+Configure external heartbeat monitoring under `settings.health`:
+
+```yaml
+settings:
+  health:
+    heartbeat_url: "https://hc-ping.com/your-uuid-here"  # URL to ping periodically
+    heartbeat_interval_seconds: 300                        # Seconds between pings (default: 60, min: 10)
+```
+
+When a `heartbeat_url` is configured, FlatMonitor sends periodic GET requests to that URL in a background thread. Results are tracked in the health endpoint under the `heartbeat` component — consecutive failures beyond the threshold (default: 3) mark the instance as unhealthy.
+
+Useful with uptime monitoring services like Healthchecks.io, Better Uptime, or Cronitor to get alerted when FlatMonitor itself goes down.
+
 ## Latency Threshold
 
 Sites without `body_contains` configuration are subject to automatic latency-based degradation detection:
@@ -80,7 +95,7 @@ Override config defaults via environment:
 | `FLATMONITOR_OUTPUT_DIR` | Dashboard output (default: `public/`) |
 | `FLATMONITOR_WORKERS` | Worker threads (default: 10) |
 | `FLATMONITOR_INSTANCE_LABEL` | Override for dashboard instance label (shows in footer, e.g. "US-East Primary") |
-| `FLATMONITOR_HEALTH_PORT` | Port for the internal health HTTP endpoint (optional — not set by default). When set, serves `GET /health` returning JSON with write/upload status, HTTP 200 if healthy, 503 if unhealthy. |
+| `FLATMONITOR_HEALTH_PORT` | Port for the internal health HTTP endpoint (optional — not set by default). When set, serves `GET /health` returning JSON with write/upload/heartbeat status, HTTP 200 if healthy, 503 if unhealthy. |
 
 ### Storage Credentials (Recommended)
 

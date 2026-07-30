@@ -101,6 +101,12 @@ class StorageConfig(BaseModel):
     s3: Optional[Dict] = Field(default=None, description="S3 backend settings")
 
 
+class HealthConfig(BaseModel):
+    """Health check configuration."""
+    heartbeat_url: Optional[str] = Field(default=None, description="URL to send heartbeat GET requests to")
+    heartbeat_interval_seconds: int = Field(default=60, ge=10, description="Interval between heartbeat pings in seconds")
+
+
 class ConfigLoader:
     """Loads and validates domain configurations from YAML files."""
 
@@ -113,6 +119,7 @@ class ConfigLoader:
         self.noindex: bool = False  # Default: allow search engine indexing
         self.dashboard: DashboardConfig = DashboardConfig()  # Default dashboard settings
         self.storage: StorageConfig = StorageConfig()  # Default filesystem storage
+        self.health: HealthConfig = HealthConfig()  # Default health settings
 
     def load(self) -> List[DomainConfig]:
         """Load domain configurations from YAML file."""
@@ -169,6 +176,13 @@ class ConfigLoader:
         # Parse storage configuration
         storage_settings = settings.get('storage', {})
         self.storage = self._parse_storage_config(storage_settings)
+
+        # Parse health configuration
+        health_settings = settings.get('health', {})
+        self.health = HealthConfig(
+            heartbeat_url=health_settings.get('heartbeat_url'),
+            heartbeat_interval_seconds=health_settings.get('heartbeat_interval_seconds', 60),
+        )
 
         # Check for duplicate domain IDs before parsing
         seen_ids = set()

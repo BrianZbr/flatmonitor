@@ -4,12 +4,12 @@ import json
 import threading
 import time
 from http.client import HTTPConnection
-from http.server import HTTPServer
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import pytest
 import requests
 
-from app.health import HealthChecker, HealthServer, HealthHandler
+from app.health import HealthChecker, HealthServer, HealthHandler, HeartbeatPinger
 
 
 class TestHealthChecker:
@@ -118,6 +118,63 @@ class TestHealthChecker:
             t.join()
 
         assert checker._write_failures == 250
+
+    def test_initial_heartbeat_is_healthy(self):
+        checker = HealthChecker(failure_threshold=3)
+        status = checker.get_status()
+        assert status["components"]["heartbeat"]["healthy"] is True
+
+    def test_single_heartbeat_failure_does_not_cause_unhealthy(self):
+        checker = HealthChecker(failure_threshold=3)
+        checker.report_heartbeat_failure("connection refused")
+        assert checker.is_healthy is True
+
+    def test_consecutive_heartbeat_failures_cause_unhealthy(self):
+        checker = HealthChecker(failure_threshold=3)
+        checker.report_heartbeat_failure("error 1")
+        checker.report_heartbeat_failure("error 2")
+        checker.report_heartbeat_failure("error 3")
+        assert checker.is_healthy is False
+        status = checker.get_status()
+        assert status["status"] == "unhealthy"
+        assert "Heartbeat failures" in status["unhealthy_reason"]
+
+    def test_heartbeat_success_recovers_from_unhealthy(self):
+        checker = HealthChecker(failure_threshold=3)
+        checker.report_heartbeat_failure("error 1")
+        checker.report_heartbeat_failure("error 2")
+        checker.report_heartbeat_failure("error 3")
+        assert checker.is_healthy is False
+        checker.report_heartbeat_success()
+        assert checker.is_healthy is True
+
+    def test_heartbeat_independent_from_write_and_upload(self):
+        checker = HealthChecker(failure_threshold=3)
+        checker.report_heartbeat_failure("error 1")
+        checker.report_heartbeat_failure("error 2")
+        checker.report_heartbeat_failure("error 3")
+        assert checker.is_healthy is False
+        checker.report_write_success()
+        assert checker.is_healthy is False
+        checker.report_upload_success()
+        assert checker.is_healthy is False
+        checker.report_heartbeat_success()
+        assert checker.is_healthy is True
+
+    def test_heartbeat_in_status_json(self):
+        checker = HealthChecker()
+        json_str = checker.get_status_json()
+        data = json.loads(json_str)
+        assert "heartbeat" in data["components"]
+
+    def test_heartbeat_tracks_last_error_and_attempt(self):
+        checker = HealthChecker(failure_threshold=3)
+        checker.report_heartbeat_failure("timeout")
+        status = checker.get_status()
+        hb_comp = status["components"]["heartbeat"]
+        assert hb_comp["last_error"] == "timeout"
+        assert hb_comp["last_attempt"] is not None
+        assert hb_comp["consecutive_failures"] == 1
 
 
 class TestHealthServer:
@@ -241,3 +298,118 @@ class TestHealthServer:
         finally:
             server1.stop()
             server2.stop()
+
+    def test_heartbeat_url_creates_pinger(self):
+        server = HealthServer(port=0, heartbeat_url="http://example.com/ping")
+        assert server._heartbeat_pinger is not None
+        assert server._heartbeat_pinger.url == "http://example.com/ping"
+        server.stop()
+
+    def test_no_heartbeat_url_no_pinger(self):
+        server = HealthServer(port=0)
+        assert server._heartbeat_pinger is None
+        server.stop()
+
+    def test_heartbeat_response_includes_heartbeat_component(self):
+        server = HealthServer(port=0)
+        checker = server.health_checker
+        checker.report_heartbeat_failure("test error")
+        try:
+            server.start()
+            time.sleep(0.1)
+            port = server._server.server_port
+            resp = requests.get(f"http://127.0.0.1:{port}/health", timeout=2)
+            data = resp.json()
+            assert "heartbeat" in data["components"]
+            assert data["components"]["heartbeat"]["last_error"] == "test error"
+        finally:
+            server.stop()
+
+
+class _TestPingHandler(BaseHTTPRequestHandler):
+    """Simple handler that returns 200 for all requests."""
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"ok")
+
+    def log_message(self, format, *args):
+        pass
+
+
+class TestHeartbeatPinger:
+    """Tests for HeartbeatPinger."""
+
+    def test_pinger_sends_successful_heartbeat(self):
+        test_server = HTTPServer(("127.0.0.1", 0), _TestPingHandler)
+        port = test_server.server_port
+        server_thread = threading.Thread(target=test_server.serve_forever, daemon=True)
+        server_thread.start()
+        time.sleep(0.1)
+
+        checker = HealthChecker(failure_threshold=3)
+        pinger = HeartbeatPinger(
+            url=f"http://127.0.0.1:{port}/ping",
+            interval=0.2,
+            health_checker=checker,
+        )
+        try:
+            pinger.start()
+            time.sleep(0.5)
+            assert checker._heartbeat_failures == 0
+            assert checker._heartbeat_last_attempt is not None
+            assert checker._heartbeat_last_error is None
+        finally:
+            pinger.stop()
+            test_server.shutdown()
+
+    def test_pinger_reports_failure_on_unreachable_url(self):
+        checker = HealthChecker(failure_threshold=3)
+        pinger = HeartbeatPinger(
+            url="http://127.0.0.1:1/nonexistent",
+            interval=0.2,
+            health_checker=checker,
+        )
+        try:
+            pinger.start()
+            time.sleep(0.5)
+            assert checker._heartbeat_failures > 0
+            assert checker._heartbeat_last_error is not None
+        finally:
+            pinger.stop()
+
+    def test_double_start_does_not_create_extra_threads(self):
+        checker = HealthChecker()
+        pinger = HeartbeatPinger(
+            url="http://127.0.0.1:1/nonexistent",
+            interval=0.5,
+            health_checker=checker,
+        )
+        try:
+            pinger.start()
+            thread_id = id(pinger._thread)
+            pinger.start()
+            assert id(pinger._thread) == thread_id
+        finally:
+            pinger.stop()
+
+    def test_stop_without_start_does_not_crash(self):
+        checker = HealthChecker()
+        pinger = HeartbeatPinger(
+            url="http://127.0.0.1:1/nonexistent",
+            interval=0.5,
+            health_checker=checker,
+        )
+        pinger.stop()
+
+    def test_double_stop_does_not_crash(self):
+        checker = HealthChecker()
+        pinger = HeartbeatPinger(
+            url="http://127.0.0.1:1/nonexistent",
+            interval=0.5,
+            health_checker=checker,
+        )
+        pinger.start()
+        time.sleep(0.1)
+        pinger.stop()
+        pinger.stop()

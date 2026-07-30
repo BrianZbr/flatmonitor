@@ -51,7 +51,7 @@ The endpoint serves `GET /health` (and `GET /`) with JSON:
 - **HTTP 200** — All components healthy
 - **HTTP 503** — A component has exceeded its consecutive-failure threshold (default: 3)
 
-Response includes per-component status for writes (CSV logging) and uploads (cloud storage):
+Response includes per-component status for writes (CSV logging), uploads (cloud storage), and heartbeat (external uptime ping):
 
 ```json
 {
@@ -69,6 +69,12 @@ Response includes per-component status for writes (CSV logging) and uploads (clo
       "consecutive_failures": 0,
       "last_error": null,
       "last_attempt": null
+    },
+    "heartbeat": {
+      "healthy": true,
+      "consecutive_failures": 0,
+      "last_error": null,
+      "last_attempt": "2026-07-16T23:19:00+00:00"
     }
   },
   "unhealthy_reason": "Write failures: 3 consecutive (last error: disk full)"

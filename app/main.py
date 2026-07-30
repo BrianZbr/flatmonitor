@@ -90,7 +90,11 @@ class FlatMonitor:
         # Initialize health server (if port configured)
         health_port = self._health_port or self._get_health_port_from_env()
         if health_port:
-            self.health_server = HealthServer(port=health_port)
+            self.health_server = HealthServer(
+                port=health_port,
+                heartbeat_url=self.config_loader.health.heartbeat_url,
+                heartbeat_interval=self.config_loader.health.heartbeat_interval_seconds,
+            )
             self.health_server.start()
 
         # Initialize components
