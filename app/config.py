@@ -179,8 +179,9 @@ class ConfigLoader:
 
         # Parse health configuration
         health_settings = settings.get('health', {})
+        raw_heartbeat_url = health_settings.get('heartbeat_url')
         self.health = HealthConfig(
-            heartbeat_url=health_settings.get('heartbeat_url'),
+            heartbeat_url=expand_env_vars(raw_heartbeat_url, 'settings.health.heartbeat_url') if raw_heartbeat_url else None,
             heartbeat_interval_seconds=health_settings.get('heartbeat_interval_seconds', 60),
         )
 

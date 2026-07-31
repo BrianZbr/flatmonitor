@@ -66,6 +66,7 @@
 #
 #   # External heartbeat monitoring (optional)
 #   # Pings a URL periodically; failures tracked in the health endpoint
+#   # Supports ${VAR} env expansion, e.g. "https://hc-ping.com/${FLATMONITOR_HEARTBEAT_UUID}"
 #   # health:
 #   #   heartbeat_url: "https://hc-ping.com/your-uuid-here"
 #   #   heartbeat_interval_seconds: 300  # Default: 60

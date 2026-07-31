@@ -73,6 +73,8 @@ settings:
     heartbeat_interval_seconds: 300                        # Seconds between pings (default: 60, min: 10)
 ```
 
+The `heartbeat_url` also supports `${VAR}` environment variable expansion (e.g. `"https://hc-ping.com/${FLATMONITOR_HEARTBEAT_UUID}"`), keeping the UUID out of your config files. You can use either form — a literal value passes through unchanged.
+
 When a `heartbeat_url` is configured, FlatMonitor sends periodic GET requests to that URL in a background thread. Results are tracked in the health endpoint under the `heartbeat` component — consecutive failures beyond the threshold (default: 3) mark the instance as unhealthy.
 
 Useful with uptime monitoring services like Healthchecks.io, Better Uptime, or Cronitor to get alerted when FlatMonitor itself goes down.
