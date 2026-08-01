@@ -262,13 +262,16 @@ class HealthServer:
 
     def __init__(self, port: int = 8080, failure_threshold: int = 3,
                  heartbeat_url: Optional[str] = None,
-                 heartbeat_interval: int = 60):
+                 heartbeat_interval: int = 60,
+                 health_checker: Optional[HealthChecker] = None):
         self.port = port
-        self.health_checker = HealthChecker(failure_threshold=failure_threshold)
+        self.health_checker = health_checker or HealthChecker(failure_threshold=failure_threshold)
         self._server: Optional[HTTPServer] = None
         self._thread: Optional[threading.Thread] = None
         self._heartbeat_pinger: Optional[HeartbeatPinger] = None
-        if heartbeat_url:
+        # Only manage the heartbeat pinger when no external checker was supplied
+        # (i.e. the caller owns both checker and pinger, e.g. FlatMonitor).
+        if health_checker is None and heartbeat_url:
             self._heartbeat_pinger = HeartbeatPinger(
                 url=heartbeat_url,
                 interval=heartbeat_interval,

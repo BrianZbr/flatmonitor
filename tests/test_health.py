@@ -310,6 +310,23 @@ class TestHealthServer:
         assert server._heartbeat_pinger is None
         server.stop()
 
+    def test_external_checker_is_reused(self):
+        checker = HealthChecker(failure_threshold=3)
+        server = HealthServer(port=0, health_checker=checker)
+        assert server.health_checker is checker
+        server.stop()
+
+    def test_external_checker_disables_builtin_pinger(self):
+        checker = HealthChecker(failure_threshold=3)
+        server = HealthServer(
+            port=0,
+            heartbeat_url="http://example.com/ping",
+            health_checker=checker,
+        )
+        assert server.health_checker is checker
+        assert server._heartbeat_pinger is None
+        server.stop()
+
     def test_heartbeat_response_includes_heartbeat_component(self):
         server = HealthServer(port=0)
         checker = server.health_checker

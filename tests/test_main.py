@@ -247,3 +247,85 @@ domains:
         monitor._upload_static_files(mock_backend)
 
         mock_backend.write_file.assert_not_called()
+
+
+class TestHeartbeatDecoupling:
+    """Tests that the heartbeat pinger runs independently of the health port."""
+
+    def _write_config(self, tmp_path, heartbeat_url):
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text(f"""settings:
+  health:
+    heartbeat_url: "{heartbeat_url}"
+    heartbeat_interval_seconds: 60
+
+domains:
+  - id: test.site
+    url: https://example.com
+""")
+        return str(config_path)
+
+    def test_heartbeat_pinger_starts_without_health_port(self, tmp_path):
+        """Heartbeat pinger runs even when FLATMONITOR_HEALTH_PORT is not set."""
+        with patch('app.main.HeartbeatPinger') as mock_pinger_cls, \
+             patch.object(FlatMonitor, '_start_workers'), \
+             patch.object(FlatMonitor, '_main_loop'):
+            monitor = FlatMonitor(
+                config_path=self._write_config(tmp_path, "https://hc-ping.com/us-east"),
+                data_dir=str(tmp_path / "data"),
+                output_dir=str(tmp_path / "public"),
+            )
+            monitor.start()
+
+        assert monitor.health_checker is not None
+        assert monitor.health_server is None
+        assert monitor._heartbeat_pinger is not None
+        mock_pinger_cls.assert_called_once()
+        call_kwargs = mock_pinger_cls.call_args.kwargs
+        assert call_kwargs["url"] == "https://hc-ping.com/us-east"
+        assert call_kwargs["health_checker"] is monitor.health_checker
+        mock_pinger_cls.return_value.start.assert_called_once()
+
+    def test_health_server_reuses_checker_when_port_set(self, tmp_path):
+        """With a health port, one shared checker is used and no double pinger runs."""
+        with patch('app.main.HeartbeatPinger') as mock_pinger_cls, \
+             patch('app.main.HealthServer') as mock_server_cls, \
+             patch.object(FlatMonitor, '_start_workers'), \
+             patch.object(FlatMonitor, '_main_loop'):
+            monitor = FlatMonitor(
+                config_path=self._write_config(tmp_path, "https://hc-ping.com/us-east"),
+                data_dir=str(tmp_path / "data"),
+                output_dir=str(tmp_path / "public"),
+                health_port=8081,
+            )
+            monitor.start()
+
+        # One pinger, created and started by FlatMonitor
+        mock_pinger_cls.assert_called_once()
+        mock_pinger_cls.return_value.start.assert_called_once()
+
+        # Health server gets the shared checker and no heartbeat_url (no second pinger)
+        mock_server_cls.assert_called_once()
+        server_kwargs = mock_server_cls.call_args.kwargs
+        assert server_kwargs["health_checker"] is monitor.health_checker
+        assert "heartbeat_url" not in server_kwargs
+
+    def test_no_heartbeat_url_no_pinger(self, tmp_path):
+        """No pinger is created when heartbeat_url is absent, even without health port."""
+        with patch('app.main.HeartbeatPinger') as mock_pinger_cls, \
+             patch.object(FlatMonitor, '_start_workers'), \
+             patch.object(FlatMonitor, '_main_loop'):
+            config_path = tmp_path / "config.yaml"
+            config_path.write_text("""domains:
+  - id: test.site
+    url: https://example.com
+""")
+            monitor = FlatMonitor(
+                config_path=str(config_path),
+                data_dir=str(tmp_path / "data"),
+                output_dir=str(tmp_path / "public"),
+            )
+            monitor.start()
+
+        assert monitor._heartbeat_pinger is None
+        mock_pinger_cls.assert_not_called()

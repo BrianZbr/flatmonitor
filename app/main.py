@@ -27,7 +27,7 @@ from app.storage import Storage
 from app.aggregator import Aggregator
 from app.renderer import Renderer
 from app.storage_backends import create_storage_backend
-from app.health import HealthServer
+from app.health import HealthServer, HealthChecker, HeartbeatPinger
 
 
 # Configure logging
@@ -63,6 +63,8 @@ class FlatMonitor:
         self.aggregator: Optional[Aggregator] = None
         self.renderer: Optional[Renderer] = None
         self.health_server: Optional[HealthServer] = None
+        self.health_checker: Optional[HealthChecker] = None
+        self._heartbeat_pinger: Optional[HeartbeatPinger] = None
 
         # Threading
         self.workers: list = []
@@ -87,13 +89,25 @@ class FlatMonitor:
         # Load configuration
         self._load_config()
 
+        # Initialize health tracking (independent of the health HTTP port)
+        self.health_checker = HealthChecker()
+
+        # Start heartbeat pinger if configured - runs without the health port
+        heartbeat_url = self.config_loader.health.heartbeat_url
+        if heartbeat_url:
+            self._heartbeat_pinger = HeartbeatPinger(
+                url=heartbeat_url,
+                interval=self.config_loader.health.heartbeat_interval_seconds,
+                health_checker=self.health_checker,
+            )
+            self._heartbeat_pinger.start()
+
         # Initialize health server (if port configured)
         health_port = self._health_port or self._get_health_port_from_env()
         if health_port:
             self.health_server = HealthServer(
                 port=health_port,
-                heartbeat_url=self.config_loader.health.heartbeat_url,
-                heartbeat_interval=self.config_loader.health.heartbeat_interval_seconds,
+                health_checker=self.health_checker,
             )
             self.health_server.start()
 
@@ -213,7 +227,7 @@ class FlatMonitor:
                     logger.debug(f"Scheduled {jobs_added} jobs")
 
                 # 2. Process results (Single-threaded writing)
-                health_checker = self.health_server.checker if self.health_server else None
+                health_checker = self.health_checker
                 while not self.results_queue.empty():
                     try:
                         result = self.results_queue.get(timeout=0.1)
@@ -242,7 +256,7 @@ class FlatMonitor:
                         storage_backend = self.renderer.storage
                         data_path = Path(self.data_dir)
                         result = storage_backend.upload_logs(data_path)
-                        health_checker = self.health_server.checker if self.health_server else None
+                        health_checker = self.health_checker
                         if result['failed'] > 0:
                             logger.warning(f"Log upload had {result['failed']} failures out of {result['total']} files")
                             if health_checker:
@@ -386,6 +400,10 @@ class FlatMonitor:
             self.config_loader.get_sites()
         )
         self.renderer.build_static_site(aggregated)
+
+        # Stop heartbeat pinger
+        if self._heartbeat_pinger:
+            self._heartbeat_pinger.stop()
 
         # Stop health server
         if self.health_server:
