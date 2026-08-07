@@ -231,6 +231,7 @@ class ConfigLoader:
             expect=expect,
             bot_protection_string=raw.get("bot_protection_string"),
             timeout=raw.get("timeout", 20),
+            interval_seconds=raw.get("interval_seconds", 60),
             expected_bot_protection=expected_protection
         )
 

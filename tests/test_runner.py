@@ -104,6 +104,31 @@ class TestRunner:
         assert result.http_status == 200
         assert result.failure_type is None
 
+    def test_rate_limited_429_is_protected(self, runner):
+        """HTTP 429 (rate limiting) counts as PROTECTED, never DOWN.
+
+        A 429 requires a live origin response, so it can't mask a real outage
+        (those yield timeout/connection errors). Body need not match any indicator.
+        """
+        domain = DomainConfig(
+            id="test.site",
+            url="https://example.com",
+            expect=ExpectConfig(http_status=200)
+        )
+
+        mock_response = Mock()
+        mock_response.status_code = 429
+        mock_response.content = b"Access is temporary limited. Please try again later."
+        mock_response.headers = {"Server": "nginx"}
+
+        with patch.object(runner.session, 'get', return_value=mock_response):
+            result = runner.check(domain)
+
+        assert result.domain_status == DomainStatus.PROTECTED
+        assert result.http_status == 429
+        assert result.failure_type is None
+        assert result.protection_type == "rate-limit"
+
     def test_timeout(self, runner, basic_domain):
         with patch.object(runner.session, 'get', side_effect=requests.exceptions.Timeout):
             result = runner.check(basic_domain)

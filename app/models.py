@@ -69,7 +69,7 @@ class DomainConfig(BaseModel):
     """Configuration for a monitored domain."""
     id: str = Field(..., description="Unique identifier for the domain")
     url: str = Field(..., description="URL to monitor")
-    interval_seconds: int = Field(default=60, ge=10, description="Check interval in seconds (fixed at 60 for timeline consistency)")
+    interval_seconds: int = Field(default=60, ge=10, description="Polling interval in seconds (default 60; per-domain override supported)")
     expect: ExpectConfig = Field(default_factory=ExpectConfig, description="Expected response criteria")
     bot_protection_string: Optional[str] = Field(default=None, description="String indicating bot protection page")
     expected_bot_protection: Optional[ExpectedBotProtection] = Field(default=None, description="Deprecated: no longer used. Bot protection is automatically detected.")

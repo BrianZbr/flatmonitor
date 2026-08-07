@@ -212,8 +212,10 @@ class Aggregator:
             failure_count = sum(1 for r in bucket_results if r.domain_status in failure_statuses)
             representative = max(bucket_results, key=lambda r: r.timestamp)
 
-            # Determine status based on failure count, preserving PROTECTED when no failures
-            if failure_count >= 2:
+            # Determine status based on failure count, preserving PROTECTED when no failures.
+            # DOWN on 2+ failures, or when every check in the bucket failed (keeps outage
+            # detection working for domains polled slower than once per bucket).
+            if failure_count >= 2 or (failure_count >= 1 and failure_count == len(bucket_results)):
                 bucket.status = DomainStatus.DOWN
             elif failure_count == 1:
                 bucket.status = DomainStatus.DEGRADED

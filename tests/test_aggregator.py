@@ -157,6 +157,33 @@ class TestAggregator:
                 return
         assert False, "No bucket with data found"
 
+    def test_all_checks_failed_shows_down(self, aggregator, sample_domain):
+        """A single failed check in a bucket (slow-polled domain) is DOWN, not DEGRADED.
+
+        With a slow per-domain interval there is one result per bucket, so '2+ failures'
+        can never trigger. Every check in the bucket failing must still mean DOWN.
+        """
+        now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+        bucket_middle = now - timedelta(minutes=2)
+
+        results = [Result(
+            timestamp=(bucket_middle + timedelta(seconds=30)).isoformat(),
+            site_id="test",
+            domain_id="test.site",
+            domain_status=DomainStatus.TIMEOUT,
+            http_status=None,
+            latency_ms=None,
+            failure_type="timeout"
+        )]
+
+        buckets = aggregator._aggregate_to_buckets(results, sample_domain)
+
+        for bucket in reversed(buckets):
+            if bucket.status != DomainStatus.UNKNOWN:
+                assert bucket.status == DomainStatus.DOWN
+                return
+        assert False, "No bucket with data found"
+
     def test_all_up_shows_up(self, aggregator, sample_domain):
         """Test that all UP results show UP (green)."""
         now = datetime.now(timezone.utc)

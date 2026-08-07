@@ -90,6 +90,28 @@ domains:
         finally:
             os.unlink(temp_path)
 
+    def test_load_per_domain_interval_seconds(self):
+        yaml_content = """
+domains:
+  - id: test.site
+    url: https://example.com
+    interval_seconds: 300
+  - id: test.other
+    url: https://example.com/other
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(yaml_content)
+            temp_path = f.name
+
+        try:
+            loader = ConfigLoader(temp_path)
+            domains = loader.load()
+
+            assert domains[0].interval_seconds == 300  # Per-domain override honored
+            assert domains[1].interval_seconds == 60  # Default when not set
+        finally:
+            os.unlink(temp_path)
+
     def test_file_not_found(self):
         loader = ConfigLoader("/nonexistent/path/config.yaml")
         with pytest.raises(FileNotFoundError):

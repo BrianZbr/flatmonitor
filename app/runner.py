@@ -311,6 +311,12 @@ class Runner:
             protection_type = self._match_protection_pattern(response, content_lower)
             return True, f"configured indicator '{domain.bot_protection_string}' found", domain.bot_protection_string, protection_type
 
+        # HTTP 429 = rate limiting. The origin responded, so the site is reachable
+        # (never an outage - a truly unreachable site yields timeout/connection errors).
+        # Classify as PROTECTED so chronic throttling doesn't show false DOWN.
+        if status_code == 429:
+            return True, "rate limited (HTTP 429)", "429", "rate-limit"
+
         # Check for bot protection patterns (on any status code - interstitial pages can be 200)
         protection_type = self._match_protection_pattern(response, content_lower)
         if protection_type:
