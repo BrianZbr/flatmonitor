@@ -1,5 +1,7 @@
 # FlatMonitor
 
+> **Beta**: This software is in beta. Behavior, configuration, and output formats may change without notice. Use at your own risk.
+
 A lightweight HTTP monitoring tool that performs health checks and generates a static HTML dashboard.
 
 ## Features
