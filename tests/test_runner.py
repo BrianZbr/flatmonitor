@@ -8,7 +8,8 @@ from unittest.mock import Mock, patch, MagicMock
 import requests
 
 from app.runner import Runner
-from app.models import DomainConfig, DomainStatus, ExpectConfig, FailureType
+from app.models import DomainConfig, DomainStatus, ExpectConfig, ExpectedBotProtection, FailureType
+from app.models import CONNECTION_BLOCKED_PROTECTION
 
 
 class TestRunner:
@@ -144,6 +145,23 @@ class TestRunner:
 
         assert result.domain_status == DomainStatus.DOWN
         assert result.failure_type == FailureType.CONNECTION_REFUSED
+
+    def test_connection_refused_declared_protected_is_protected(self, runner):
+        """Sites declared as behind bot protection treat connection refusal as a
+        Cloudflare IP block (PROTECTED), not an outage."""
+        domain = DomainConfig(
+            id="test.site",
+            url="https://example.com",
+            expect=ExpectConfig(http_status=200),
+            expected_bot_protection=ExpectedBotProtection(status_code=200, indicator="cloudflare")
+        )
+
+        with patch.object(runner.session, 'get', side_effect=requests.exceptions.ConnectionError("Connection refused")):
+            result = runner.check(domain)
+
+        assert result.domain_status == DomainStatus.PROTECTED
+        assert result.failure_type is None
+        assert result.protection_type == CONNECTION_BLOCKED_PROTECTION
 
     def test_general_request_exception(self, runner, basic_domain):
         with patch.object(runner.session, 'get', side_effect=requests.exceptions.RequestException("Some error")):

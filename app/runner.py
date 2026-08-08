@@ -14,6 +14,7 @@ from typing import Optional
 from datetime import datetime, timezone
 
 from app.models import DomainConfig, Result, DomainStatus, FailureType
+from app.models import CONNECTION_BLOCKED_PROTECTION
 from app.cert_storage import CertStorage
 from requests.adapters import HTTPAdapter
 
@@ -275,6 +276,17 @@ class Runner:
             )
 
         except requests.exceptions.ConnectionError as e:
+            # Domain declared as behind bot protection (expected_bot_protection):
+            # a connection refusal is the anti-bot layer (e.g., Cloudflare) blocking
+            # the checker IP, not an outage. Classify as PROTECTED, not DOWN. The
+            # distinct marker lets the aggregator escalate persistent refusal-only
+            # blocks (see _apply_refusal_guard).
+            if domain.expected_bot_protection:
+                return Result.create(
+                    domain=domain,
+                    status=DomainStatus.PROTECTED,
+                    protection_type=CONNECTION_BLOCKED_PROTECTION
+                )
             return Result.create(
                 domain=domain,
                 status=DomainStatus.DOWN,

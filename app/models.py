@@ -9,6 +9,12 @@ from typing import Optional
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 
+# protection_type marker for PROTECTED results caused by a connection refusal
+# (anti-bot IP block) rather than an actual served challenge page. Distinct from
+# detected types like "Cloudflare" / "DDoS-Guard" so the aggregator can escalate
+# persistent refusal-only blocks.
+CONNECTION_BLOCKED_PROTECTION = "connection-blocked"
+
 
 def get_log_filename(site_id: str, domain_id: str) -> str:
     """Get the log filename (without path or extension) for a domain.
@@ -72,7 +78,7 @@ class DomainConfig(BaseModel):
     interval_seconds: int = Field(default=60, ge=10, description="Polling interval in seconds (default 60; per-domain override supported)")
     expect: ExpectConfig = Field(default_factory=ExpectConfig, description="Expected response criteria")
     bot_protection_string: Optional[str] = Field(default=None, description="String indicating bot protection page")
-    expected_bot_protection: Optional[ExpectedBotProtection] = Field(default=None, description="Deprecated: no longer used. Bot protection is automatically detected.")
+    expected_bot_protection: Optional[ExpectedBotProtection] = Field(default=None, description="Declares the site sits behind bot protection. When set, a connection refusal (e.g., Cloudflare blocking the checker IP) is classified as PROTECTED instead of DOWN.")
     timeout: int = Field(default=20, ge=1, le=300, description="Request timeout in seconds (default: 20)")
     link_disabled: bool = Field(default=False, description="Disable clickable links for this domain in the UI (default: false)")
 

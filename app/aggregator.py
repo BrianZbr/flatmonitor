@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Tuple, Optional
 from collections import defaultdict
 
-from app.models import DomainConfig, Result, DomainStatus, SiteHealth
+from app.models import DomainConfig, Result, DomainStatus, SiteHealth, CONNECTION_BLOCKED_PROTECTION
 from app.cert_storage import CertStorage
 
 
@@ -73,6 +73,9 @@ class Aggregator:
 
             # Determine current state
             current_status = self._get_current_state(buckets, domain)
+            # Escalate persistent refusal-only PROTECTED to DEGRADED so a domain
+            # that can never be reached (seized/blocked) can't hide as green.
+            current_status = self._apply_refusal_guard(current_status, results)
 
             # Get last check details from most recent result
             last_check = self._get_last_check_details(results, domain)
@@ -242,6 +245,29 @@ class Aggregator:
                 return bucket.status
 
         return DomainStatus.UNKNOWN
+
+    def _apply_refusal_guard(self, current_status: DomainStatus,
+                             results: List[Result]) -> DomainStatus:
+        """Downgrade persistent refusal-only PROTECTED to DEGRADED.
+
+        A domain declared behind bot protection classifies connection refusals as
+        PROTECTED (anti-bot IP block). But if the entire history window contains no
+        successful signal at all - no UP and no real served challenge (PROTECTED with
+        a detected protection type) - the domain is consistently unreachable, not
+        merely transiently blocked. Show DEGRADED so a seized/dead domain can't hide
+        as green.
+        """
+        if current_status != DomainStatus.PROTECTED:
+            return current_status
+
+        for result in results:
+            if result.domain_status == DomainStatus.UP:
+                return current_status
+            if (result.domain_status == DomainStatus.PROTECTED
+                    and result.protection_type != CONNECTION_BLOCKED_PROTECTION):
+                return current_status
+
+        return DomainStatus.DEGRADED
 
     def _determine_site_health(self, domain_states: Dict[str, Dict]) -> SiteHealth:
         """

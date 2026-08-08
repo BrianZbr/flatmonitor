@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
 
 from app.aggregator import Aggregator, Bucket
-from app.models import DomainConfig, DomainStatus, SiteHealth, Result
+from app.models import DomainConfig, DomainStatus, SiteHealth, Result, CONNECTION_BLOCKED_PROTECTION
 
 
 class TestBucket:
@@ -183,6 +183,54 @@ class TestAggregator:
                 assert bucket.status == DomainStatus.DOWN
                 return
         assert False, "No bucket with data found"
+
+    def test_refusal_guard_escalates_persistent_block(self, aggregator):
+        """A domain whose every check in the window is a refusal-blocked PROTECTED
+        (no successful challenge/UP) is downgraded to DEGRADED, not green."""
+        now = datetime.now(timezone.utc)
+        results = [Result(
+            timestamp=(now - timedelta(minutes=i * 5)).isoformat(),
+            site_id="test", domain_id="test.site",
+            domain_status=DomainStatus.PROTECTED,
+            http_status=None, latency_ms=None, failure_type=None,
+            protection_type=CONNECTION_BLOCKED_PROTECTION
+        ) for i in range(6)]
+
+        current = DomainStatus.PROTECTED
+        guarded = aggregator._apply_refusal_guard(current, results)
+        assert guarded == DomainStatus.DEGRADED
+
+    def test_refusal_guard_keeps_green_when_challenge_seen(self, aggregator):
+        """A real served challenge (detected protection type) in the window means
+        the site is reachable - stays PROTECTED."""
+        now = datetime.now(timezone.utc)
+        results = [Result(
+            timestamp=(now - timedelta(minutes=i * 5)).isoformat(),
+            site_id="test", domain_id="test.site",
+            domain_status=DomainStatus.PROTECTED,
+            http_status=200, latency_ms=100, failure_type=None,
+            protection_type="Cloudflare"
+        ) for i in range(4)]
+        results.append(Result(
+            timestamp=(now - timedelta(minutes=25)).isoformat(),
+            site_id="test", domain_id="test.site",
+            domain_status=DomainStatus.PROTECTED,
+            http_status=None, latency_ms=None, failure_type=None,
+            protection_type=CONNECTION_BLOCKED_PROTECTION
+        ))
+
+        guarded = aggregator._apply_refusal_guard(DomainStatus.PROTECTED, results)
+        assert guarded == DomainStatus.PROTECTED
+
+    def test_refusal_guard_noop_on_down(self, aggregator):
+        """The guard only affects PROTECTED states."""
+        results = [Result(
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            site_id="test", domain_id="test.site",
+            domain_status=DomainStatus.DOWN, http_status=503,
+            latency_ms=100, failure_type="http_error"
+        )]
+        assert aggregator._apply_refusal_guard(DomainStatus.DOWN, results) == DomainStatus.DOWN
 
     def test_all_up_shows_up(self, aggregator, sample_domain):
         """Test that all UP results show UP (green)."""

@@ -6,13 +6,17 @@
 |-------|------|----------|---------|-------------|
 | `id` | string | Yes | - | Unique identifier (format: `site.domain`) |
 | `url` | string | Yes | - | URL to monitor |
-| `interval_seconds` | int | No | 60 | Fixed at 60s (1 min). Not configurable. |
+| `interval_seconds` | int | No | 60 | Polling interval per domain (min: 10). Slower intervals (e.g. 300) reduce load on aggressive/rate-limited sites |
 | `timeout_seconds` | int | No | 20 | HTTP timeout (min: 1, max: 60) |
 | `expect` | object | No | `{http_status: 200}` | Expected response criteria |
 | `expect.http_status` | int | No | 200 | Expected HTTP status code |
 | `expect.body_contains` | string | No | - | Required content in response body |
 | `expected_bot_protection.status_code` | int | No | - | Expected HTTP status when protected |
 | `expected_bot_protection.indicator` | string | No | - | Expected protection indicator (body content like "checking your browser" or header-based like "cf-ray", "cloudflare", "ddos-guard") |
+
+`expected_bot_protection` also declares the site as sitting behind an anti-bot layer: a **connection refusal** (e.g. Cloudflare blocking the checker IP) is then classified as PROTECTED instead of DOWN. This is opt-in per site — use it only for domains known to block scrape IPs (e.g. Cloudflare-protected mirrors).
+
+Safeguard: if the entire history window contains **no** successful signal (no UP, no real served challenge) — i.e. the domain is *consistently* unreachable, not transiently blocked — the current state is downgraded to DEGRADED, so a seized or dead domain can't hide as green. Refusal-based PROTECTED results carry `protection_type="connection-blocked"` to distinguish them from real served challenges.
 
 ## Site Health Determination
 
