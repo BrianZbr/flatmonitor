@@ -21,11 +21,16 @@ class Renderer:
 
     def __init__(self, templates_dir: str = "templates", output_dir: str = "public",
                  noindex: bool = False, dashboard_config=None,
-                 storage_backend: StorageBackend = None, data_dir: str = "data"):
+                 storage_backend: StorageBackend = None, data_dir: str = "data",
+                 site_configs=None):
         self.templates_dir = Path(templates_dir)
         self.output_dir = Path(output_dir)
         self.noindex = noindex
         self.dashboard_config = dashboard_config or {}
+        self.site_configs = {
+            site_id: (cfg.model_dump() if hasattr(cfg, "model_dump") else cfg)
+            for site_id, cfg in (site_configs or {}).items()
+        }
         # Auto-use logo as favicon if favicon not explicitly set
         if not self.dashboard_config.get('favicon') and self.dashboard_config.get('logo'):
             self.dashboard_config['favicon'] = self.dashboard_config['logo']
@@ -133,8 +138,11 @@ class Renderer:
             timeout_count = sum(1 for d in domains_list if d["status"] == DomainStatus.TIMEOUT)
             unknown_count = sum(1 for d in domains_list if d["status"] == DomainStatus.UNKNOWN)
 
+            site_meta = self.site_configs.get(site_id, {})
             summary = {
                 "id": site_id,
+                "name": site_meta.get("name") or site_id,
+                "description": site_meta.get("description") or "",
                 "health": site_data["health"],
                 "domains": domains_with_timeline,
                 "bucket_count": site_data["bucket_count"],
@@ -188,6 +196,10 @@ class Renderer:
         # Check if using MultiStorageBackend (cloud + local)
         from app.storage_backends import MultiStorageBackend, FilesystemBackend
         using_multi = isinstance(self.storage, MultiStorageBackend)
+
+        site_meta = self.site_configs.get(site_id, {})
+        site_name = site_meta.get("name") or site_id
+        site_description = site_meta.get("description") or ""
 
         # Discover available archive dates for this site
         archive_dates = self._get_archive_dates(site_id)
@@ -255,10 +267,12 @@ class Renderer:
             """Render template with given domain data."""
             return template.render(
                 site_id=site_id,
+                site_name=site_name,
+                site_description=site_description,
                 health=site_data["health"],
                 domains=domains,
                 generated_at=generated_at,
-                title=f"{site_id} - {self.dashboard_config.get('title', 'FlatMonitor')}",
+                title=f"{site_name} - {self.dashboard_config.get('title', 'FlatMonitor')}",
                 noindex=self.noindex,
                 header_text=self.dashboard_config.get('header_text'),
                 announcement=self.dashboard_config.get('announcement'),

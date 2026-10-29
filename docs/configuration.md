@@ -6,6 +6,7 @@
 |-------|------|----------|---------|-------------|
 | `id` | string | Yes | - | Unique identifier (format: `site.domain`) |
 | `url` | string | Yes | - | URL to monitor |
+| `role` | string | No | - | Documentation hint: `core` or `supplementary` |
 | `interval_seconds` | int | No | 60 | Polling interval per domain (min: 10). Slower intervals (e.g. 300) reduce load on aggressive/rate-limited sites |
 | `timeout_seconds` | int | No | 20 | HTTP timeout (min: 1, max: 60) |
 | `expect` | object | No | `{http_status: 200}` | Expected response criteria |
@@ -20,9 +21,27 @@ Safeguard: if the entire history window contains **no** successful signal (no UP
 
 ## Site Health Determination
 
-- **UP**: All domains UP or PROTECTED
-- **DEGRADED**: Any domain DEGRADED (1 failure in 5-min window)
-- **DOWN**: Any domain DOWN, TIMEOUT, or UNKNOWN (2+ failures or no data)
+- **UP**: All domains UP, PROTECTED, or BOT_DETECTED
+- **DEGRADED**: Some but not all domains are DOWN/TIMEOUT; or any domain is DEGRADED/UNKNOWN while others have data
+- **DOWN**: Every domain is DOWN or TIMEOUT
+- **UNKNOWN**: No domain has data yet
+
+A single failed mirror therefore makes the group DEGRADED (yellow), not DOWN (red). A complete group outage still shows DOWN.
+
+## Site Display Metadata
+
+Optional top-level `sites:` entries control the display name and description for a group. Internal IDs (`annas`, `libgen`, etc.) are unchanged and still drive filenames, links, and log paths.
+
+```yaml
+sites:
+  annas:
+    name: "Anna's Archive"
+    description: "Search engine for shadow libraries"
+  libgen:
+    name: "Library Genesis"
+```
+
+If no entry exists, the group displays its internal ID.
 
 ## Dashboard Customization
 
@@ -56,7 +75,7 @@ settings:
 - `build_interval_seconds`: Controls how often the static HTML dashboard is rebuilt and uploaded to R2. Higher values reduce R2 operations but slow down dashboard updates. Minimum is 10 seconds.
 - `static_files`: List of filenames in the `public/` root directory to upload alongside the dashboard. Files are uploaded with auto-detected content type and `max-age=3600` cache headers. Useful for static pages like DMCA notices, terms of service, or robots.txt that need to be served from cloud storage.
 
-**Auto-Reload:** Dashboard settings are automatically reloaded before each rebuild. Changes to `title`, `logo`, `favicon`, `header_text`, `announcement`, `footer_links`, `sort_by`, `instance_label`, `build_interval_seconds`, and `static_files` take effect without restarting the application. Domain and storage changes still require a restart.
+**Auto-Reload:** Dashboard settings and the top-level `sites:` display metadata are automatically reloaded before each rebuild. Changes to `title`, `logo`, `favicon`, `header_text`, `announcement`, `footer_links`, `sort_by`, `instance_label`, `build_interval_seconds`, `static_files`, and `sites` take effect without restarting the application. Domain and storage changes still require a restart.
 
 ## Storage Settings
 

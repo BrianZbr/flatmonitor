@@ -5,15 +5,16 @@ YAML loading and validation for domain configurations.
 """
 
 import os
+import re
 import yaml
 import logging
 from typing import Dict, List
 from pathlib import Path
+from urllib.parse import urlparse
 
 from app.models import DomainConfig, ExpectConfig, ExpectedBotProtection
 from pydantic import BaseModel, Field
 from typing import Optional, List as ListType, Dict
-import re
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +93,12 @@ class DashboardConfig(BaseModel):
     static_files: ListType[str] = Field(default_factory=list, description="Static HTML files in public/ root to upload to cloud storage")
 
 
+class SiteConfig(BaseModel):
+    """Display metadata for a site group. Internal IDs are unchanged."""
+    name: Optional[str] = Field(default=None, description="Display name for the group")
+    description: Optional[str] = Field(default=None, description="Optional short description")
+
+
 class StorageConfig(BaseModel):
     """Storage backend configuration."""
     type: str = Field(default="filesystem", description="Storage type: 'filesystem', 'r2', or 's3'")
@@ -107,6 +114,23 @@ class HealthConfig(BaseModel):
     heartbeat_interval_seconds: int = Field(default=60, ge=10, description="Interval between heartbeat pings in seconds")
 
 
+def parse_site_configs(config_data: Dict) -> Dict[str, SiteConfig]:
+    """Parse the optional top-level `sites:` display metadata map."""
+    raw_sites = (config_data or {}).get("sites") or {}
+    if not isinstance(raw_sites, dict):
+        raise ValueError("Configuration 'sites' must be a mapping of site_id -> {name, description}")
+
+    sites: Dict[str, SiteConfig] = {}
+    for site_id, raw in raw_sites.items():
+        if not isinstance(raw, dict):
+            raise ValueError(f"Configuration site '{site_id}' must be a mapping")
+        sites[str(site_id)] = SiteConfig(
+            name=raw.get("name"),
+            description=raw.get("description"),
+        )
+    return sites
+
+
 class ConfigLoader:
     """Loads and validates domain configurations from YAML files."""
 
@@ -114,6 +138,8 @@ class ConfigLoader:
         self.config_path = Path(config_path)
         self.config_data: Dict = {}
         self.domains: List[DomainConfig] = []
+        self.site_configs: Dict[str, SiteConfig] = {}
+        self.validation_warnings: List[str] = []
         self.rotation_interval: int = 86400  # Default: 24 hours (daily rotation)
         self.retention_days: int = 7  # Default: 7 days of archive retention
         self.noindex: bool = False  # Default: allow search engine indexing
@@ -142,6 +168,11 @@ class ConfigLoader:
 
         if not self.config_data or "domains" not in self.config_data:
             raise ValueError("Configuration must contain a 'domains' key")
+
+        # Validate the raw structure and warn about unknown fields before parsing.
+        self.validation_warnings = []
+        self._validate_raw_config()
+        self.site_configs = parse_site_configs(self.config_data)
 
         # Parse settings
         settings = self.config_data.get('settings', {})
@@ -207,6 +238,204 @@ class ConfigLoader:
 
         return self.domains
 
+    def _validate_raw_config(self) -> None:
+        """Validate the raw YAML structure.
+
+        Errors raise ValueError so a bad config cannot be deployed. Unknown keys are
+        warnings so older/newer config files still load, but typos are visible.
+        """
+        data = self.config_data or {}
+        errors: List[str] = []
+        warnings: List[str] = []
+
+        def err(msg: str) -> None:
+            errors.append(msg)
+
+        def warn(msg: str) -> None:
+            warnings.append(msg)
+
+        if not isinstance(data, dict):
+            raise ValueError("Configuration root must be a mapping")
+
+        for key in sorted(set(data) - {"settings", "sites", "domains"}):
+            warn(f"unknown top-level key '{key}'")
+
+        # settings
+        settings = data.get("settings", {}) or {}
+        if not isinstance(settings, dict):
+            err("'settings' must be a mapping")
+            settings = {}
+        for key in sorted(set(settings) - {
+            "rotation_interval_seconds", "retention_days", "noindex",
+            "health", "dashboard", "storage"
+        }):
+            warn(f"unknown settings key '{key}'")
+        for key, minimum in (("rotation_interval_seconds", 1), ("retention_days", 1)):
+            if key in settings:
+                value = settings[key]
+                if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
+                    err(f"settings.{key} must be an integer >= {minimum}")
+        if "noindex" in settings and not isinstance(settings["noindex"], bool):
+            err("settings.noindex must be a boolean")
+
+        # dashboard
+        dashboard = settings.get("dashboard", {}) or {}
+        if not isinstance(dashboard, dict):
+            err("settings.dashboard must be a mapping")
+            dashboard = {}
+        for key in sorted(set(dashboard) - set(DashboardConfig.model_fields)):
+            warn(f"unknown dashboard key 'settings.dashboard.{key}'")
+        if "sort_by" in dashboard and dashboard["sort_by"] not in (
+            "yaml_order", "severity", "alphabetical"
+        ):
+            err("settings.dashboard.sort_by must be 'yaml_order', 'severity', or 'alphabetical'")
+        for key, minimum in (("build_interval_seconds", 10), ("auto_refresh_seconds", 0)):
+            if key in dashboard:
+                value = dashboard[key]
+                if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
+                    err(f"settings.dashboard.{key} must be an integer >= {minimum}")
+        if "footer_links" in dashboard:
+            links = dashboard["footer_links"]
+            if not isinstance(links, list):
+                err("settings.dashboard.footer_links must be a list")
+            else:
+                for i, link in enumerate(links):
+                    if not isinstance(link, dict) or "text" not in link or "url" not in link:
+                        err(f"settings.dashboard.footer_links[{i}] must contain 'text' and 'url'")
+
+        # health
+        health = settings.get("health", {}) or {}
+        if not isinstance(health, dict):
+            err("settings.health must be a mapping")
+            health = {}
+        for key in sorted(set(health) - {"heartbeat_url", "heartbeat_interval_seconds"}):
+            warn(f"unknown health key 'settings.health.{key}'")
+        if "heartbeat_interval_seconds" in health:
+            value = health["heartbeat_interval_seconds"]
+            if not isinstance(value, int) or isinstance(value, bool) or value < 10:
+                err("settings.health.heartbeat_interval_seconds must be an integer >= 10")
+
+        # storage
+        storage = settings.get("storage", {}) or {}
+        if not isinstance(storage, dict):
+            err("settings.storage must be a mapping")
+            storage = {}
+        for key in sorted(set(storage) - {"type", "upload_logs", "filesystem", "r2", "s3"}):
+            warn(f"unknown storage key 'settings.storage.{key}'")
+        if "type" in storage and storage["type"] not in ("filesystem", "r2", "s3"):
+            err("settings.storage.type must be 'filesystem', 'r2', or 's3'")
+
+        # sites (optional display metadata)
+        sites = data.get("sites", {}) or {}
+        if not isinstance(sites, dict):
+            err("'sites' must be a mapping of site_id -> {name, description}")
+            sites = {}
+        for site_id, raw in sites.items():
+            if not isinstance(raw, dict):
+                err(f"sites.{site_id} must be a mapping")
+                continue
+            for key in sorted(set(raw) - {"name", "description"}):
+                warn(f"unknown sites.{site_id} key '{key}'")
+            for key in ("name", "description"):
+                if key in raw and raw[key] is not None and not isinstance(raw[key], str):
+                    err(f"sites.{site_id}.{key} must be a string")
+
+        # domains
+        domains = data.get("domains")
+        if not isinstance(domains, list) or not domains:
+            err("'domains' must be a non-empty list")
+            domains = []
+
+        allowed_domain_keys = set(DomainConfig.model_fields)
+        seen_ids: Dict[str, int] = {}
+        duplicates: List[str] = []
+        domain_site_ids = set()
+
+        for i, raw in enumerate(domains):
+            context = f"domains[{i}]"
+            if not isinstance(raw, dict):
+                err(f"{context} must be a mapping")
+                continue
+
+            domain_id = raw.get("id")
+            if not isinstance(domain_id, str) or not domain_id.strip():
+                err(f"{context}.id must be a non-empty string")
+            else:
+                context = f"{context} (id={domain_id})"
+                if domain_id in seen_ids:
+                    duplicates.append(domain_id)
+                seen_ids[domain_id] = i
+                if "." in domain_id:
+                    domain_site_ids.add(domain_id.split(".", 1)[0])
+                else:
+                    domain_site_ids.add("default")
+                    warn(f"{context}.id has no '.'; it will be grouped under 'default'")
+
+            for key in sorted(set(raw) - allowed_domain_keys):
+                warn(f"unknown {context} key '{key}'")
+
+            url = raw.get("url")
+            if not isinstance(url, str) or not url.strip():
+                err(f"{context}.url must be a non-empty string")
+            else:
+                parsed = urlparse(url)
+                if parsed.scheme not in ("http", "https") or not parsed.netloc:
+                    err(f"{context}.url must be an absolute http(s) URL")
+
+            if "interval_seconds" in raw:
+                value = raw["interval_seconds"]
+                if not isinstance(value, int) or isinstance(value, bool) or value < 10:
+                    err(f"{context}.interval_seconds must be an integer >= 10")
+            if "timeout" in raw:
+                value = raw["timeout"]
+                if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= 300:
+                    err(f"{context}.timeout must be an integer between 1 and 300")
+            if "role" in raw and raw["role"] not in (None, "core", "supplementary"):
+                warn(f"{context}.role '{raw['role']}' is not 'core' or 'supplementary'")
+
+            expect = raw.get("expect", {}) or {}
+            if not isinstance(expect, dict):
+                err(f"{context}.expect must be a mapping")
+                expect = {}
+            for key in sorted(set(expect) - set(ExpectConfig.model_fields)):
+                warn(f"unknown {context}.expect key '{key}'")
+            if "http_status" in expect:
+                value = expect["http_status"]
+                if not isinstance(value, int) or isinstance(value, bool) or not 100 <= value <= 599:
+                    err(f"{context}.expect.http_status must be an integer between 100 and 599")
+            if "body_contains" in expect and expect["body_contains"] is not None and not isinstance(expect["body_contains"], str):
+                err(f"{context}.expect.body_contains must be a string or null")
+
+            ebp = raw.get("expected_bot_protection")
+            if ebp is not None:
+                if not isinstance(ebp, dict):
+                    err(f"{context}.expected_bot_protection must be a mapping")
+                else:
+                    for key in sorted(set(ebp) - set(ExpectedBotProtection.model_fields)):
+                        warn(f"unknown {context}.expected_bot_protection key '{key}'")
+                    if "status_code" in ebp and ebp["status_code"] is not None:
+                        value = ebp["status_code"]
+                        if not isinstance(value, int) or isinstance(value, bool) or not 100 <= value <= 599:
+                            err(f"{context}.expected_bot_protection.status_code must be an integer between 100 and 599")
+                    if "indicator" in ebp and ebp["indicator"] is not None and not isinstance(ebp["indicator"], str):
+                        err(f"{context}.expected_bot_protection.indicator must be a string or null")
+
+        if duplicates:
+            err(
+                "Duplicate domain ID(s) found in configuration: "
+                + ", ".join(duplicates)
+                + ". Each domain must have a unique 'id' field."
+            )
+
+        for site_id in sorted(set(sites) - domain_site_ids):
+            warn(f"sites.{site_id} has no matching domains")
+
+        self.validation_warnings = warnings
+        for warning in warnings:
+            logger.warning(f"Config warning: {warning}")
+        if errors:
+            raise ValueError("Configuration validation failed:\n  - " + "\n  - ".join(errors))
+
     def _parse_domain(self, raw: dict) -> DomainConfig:
         """Parse raw dict into DomainConfig with validation."""
         # Parse expect config if present
@@ -228,6 +457,7 @@ class ConfigLoader:
         return DomainConfig(
             id=raw["id"],
             url=raw["url"],
+            role=raw.get("role"),
             expect=expect,
             bot_protection_string=raw.get("bot_protection_string"),
             timeout=raw.get("timeout", 20),

@@ -92,10 +92,13 @@ class TestAggregator:
 
     def test_single_failure_shows_degraded(self, aggregator, sample_domain):
         """Test that 1 failure in a bucket shows DEGRADED (yellow)."""
-        # Align to 5-minute bucket boundary
-        now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
-        # Go back 2 minutes to be in middle of a 5-min bucket
-        bucket_middle = now - timedelta(minutes=2)
+        # Align to the middle of the current 5-minute bucket so the test does not
+        # straddle a boundary when it runs near the start of a bucket.
+        now = datetime.now(timezone.utc)
+        bucket_start = now.replace(
+            minute=(now.minute // 5) * 5, second=0, microsecond=0
+        )
+        bucket_middle = bucket_start + timedelta(minutes=2, seconds=30)
 
         # Create 5 results all within same 5-minute bucket (within 2.5 min of center)
         results = []
@@ -125,10 +128,13 @@ class TestAggregator:
 
     def test_two_failures_shows_down(self, aggregator, sample_domain):
         """Test that 2 failures in a bucket shows DOWN (red)."""
-        # Align to 5-minute bucket boundary
-        now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
-        # Go back 2 minutes to be in middle of a 5-min bucket
-        bucket_middle = now - timedelta(minutes=2)
+        # Align to the middle of the current 5-minute bucket so the test does not
+        # straddle a boundary when it runs near the start of a bucket.
+        now = datetime.now(timezone.utc)
+        bucket_start = now.replace(
+            minute=(now.minute // 5) * 5, second=0, microsecond=0
+        )
+        bucket_middle = bucket_start + timedelta(minutes=2, seconds=30)
 
         # Create 5 results all within same 5-minute bucket (within 2.5 min of center)
         results = []
@@ -346,7 +352,7 @@ class TestAggregator:
         health = aggregator._determine_site_health(domain_states)
         assert health == SiteHealth.UP
 
-    def test_determine_site_health_any_down(self, aggregator):
+    def test_determine_site_health_partial_down_is_degraded(self, aggregator):
         domain_states = {
             "domain1.site": {"status": DomainStatus.DOWN},
             "domain2.site": {"status": DomainStatus.UP},
@@ -354,19 +360,37 @@ class TestAggregator:
         }
 
         health = aggregator._determine_site_health(domain_states)
+        assert health == SiteHealth.DEGRADED
+
+    def test_determine_site_health_all_down_is_down(self, aggregator):
+        domain_states = {
+            "domain1.site": {"status": DomainStatus.DOWN},
+            "domain2.site": {"status": DomainStatus.DOWN},
+        }
+
+        health = aggregator._determine_site_health(domain_states)
         assert health == SiteHealth.DOWN
 
-    def test_determine_site_health_any_timeout(self, aggregator):
+    def test_determine_site_health_partial_timeout_is_degraded(self, aggregator):
         domain_states = {
             "domain1.site": {"status": DomainStatus.TIMEOUT},
             "domain2.site": {"status": DomainStatus.UP},
         }
 
         health = aggregator._determine_site_health(domain_states)
+        assert health == SiteHealth.DEGRADED
+
+    def test_determine_site_health_all_timeout_is_down(self, aggregator):
+        domain_states = {
+            "domain1.site": {"status": DomainStatus.TIMEOUT},
+            "domain2.site": {"status": DomainStatus.TIMEOUT},
+        }
+
+        health = aggregator._determine_site_health(domain_states)
         assert health == SiteHealth.DOWN
 
-    def test_determine_site_health_down_results_in_down(self, aggregator):
-        """Test that any domain DOWN results in DOWN site health."""
+    def test_determine_site_health_one_down_results_in_degraded(self, aggregator):
+        """One DOWN domain makes the group DEGRADED, not DOWN."""
         domain_states = {
             "domain1.site": {"status": DomainStatus.UP},
             "domain2.site": {"status": DomainStatus.UP},
@@ -374,7 +398,7 @@ class TestAggregator:
         }
 
         health = aggregator._determine_site_health(domain_states)
-        assert health == SiteHealth.DOWN
+        assert health == SiteHealth.DEGRADED
 
     def test_determine_site_health_any_degraded(self, aggregator):
         """Test that any domain DEGRADED results in DEGRADED site health."""
@@ -417,24 +441,24 @@ class TestAggregator:
         assert health == SiteHealth.UP
 
     def test_determine_site_health_any_unknown(self, aggregator):
-        """Any domain UNKNOWN should result in DOWN."""
+        """Mixed UNKNOWN + data is DEGRADED (data incomplete), not DOWN."""
         domain_states = {
             "domain1.site": {"status": DomainStatus.UNKNOWN},
             "domain2.site": {"status": DomainStatus.UP},
         }
 
         health = aggregator._determine_site_health(domain_states)
-        assert health == SiteHealth.DOWN
+        assert health == SiteHealth.DEGRADED
 
-    def test_determine_site_health_unknown_results_in_down(self, aggregator):
-        """Any domain UNKNOWN should result in DOWN."""
+    def test_determine_site_health_unknown_results_in_degraded(self, aggregator):
+        """Mixed UNKNOWN + data is DEGRADED (data incomplete), not DOWN."""
         domain_states = {
             "domain1.site": {"status": DomainStatus.UP},
             "domain2.site": {"status": DomainStatus.UNKNOWN},
         }
 
         health = aggregator._determine_site_health(domain_states)
-        assert health == SiteHealth.DOWN
+        assert health == SiteHealth.DEGRADED
 
     def test_determine_site_health_all_unknown(self, aggregator):
         """All domains UNKNOWN should result in UNKNOWN (gray, not red)."""

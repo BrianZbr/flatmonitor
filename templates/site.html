@@ -12,9 +12,10 @@
 {% endif %}
 
 <header>
-    <h1>{{ site_id }}</h1>
+    <h1>{{ site_name or site_id }}</h1>
+    {% if site_description %}<p class="site-description">{{ site_description }}</p>{% endif %}
     <p class="subtitle">
-        Status: <span class="status-badge {{ health.value }}">{{ health.value }}</span>
+        Status: <span class="status-badge {{ health.value|health_class }}">{{ health.value }}</span>
     </p>
 </header>
 

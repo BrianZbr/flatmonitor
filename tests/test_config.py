@@ -693,3 +693,114 @@ domains:
             assert loader.dashboard.static_files == ["dmca.html", "robots.txt"]
         finally:
             os.unlink(temp_path)
+
+    def test_parse_site_display_metadata(self):
+        """The optional sites map supplies display names without changing IDs."""
+        yaml_content = """
+sites:
+  annas:
+    name: "Anna's Archive"
+    description: "Search engine"
+  other:
+    name: "Other"
+
+domains:
+  - id: annas.gl
+    url: https://annas-archive.gl
+  - id: other.motw
+    url: https://library.memoryoftheworld.org
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(yaml_content)
+            temp_path = f.name
+
+        try:
+            loader = ConfigLoader(temp_path)
+            loader.load()
+            assert loader.site_configs["annas"].name == "Anna's Archive"
+            assert loader.site_configs["annas"].description == "Search engine"
+            assert loader.site_configs["other"].name == "Other"
+            assert loader.site_configs["other"].description is None
+            assert loader.validation_warnings == []
+        finally:
+            os.unlink(temp_path)
+
+    def test_role_is_parsed(self):
+        yaml_content = """
+domains:
+  - id: test.site
+    url: https://example.com
+    role: core
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(yaml_content)
+            temp_path = f.name
+
+        try:
+            loader = ConfigLoader(temp_path)
+            domains = loader.load()
+            assert domains[0].role == "core"
+        finally:
+            os.unlink(temp_path)
+
+    def test_unknown_keys_warn_but_do_not_fail(self):
+        yaml_content = """
+settings:
+  dashboard:
+    typo_setting: true
+
+domains:
+  - id: test.site
+    url: https://example.com
+    typo_domain_key: 1
+    expect:
+      typo_expect_key: 2
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(yaml_content)
+            temp_path = f.name
+
+        try:
+            loader = ConfigLoader(temp_path)
+            loader.load()
+            joined = "\n".join(loader.validation_warnings)
+            assert "typo_setting" in joined
+            assert "typo_domain_key" in joined
+            assert "typo_expect_key" in joined
+        finally:
+            os.unlink(temp_path)
+
+    def test_invalid_url_raises(self):
+        yaml_content = """
+domains:
+  - id: test.site
+    url: example.com
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(yaml_content)
+            temp_path = f.name
+
+        try:
+            loader = ConfigLoader(temp_path)
+            with pytest.raises(ValueError, match="absolute http"):
+                loader.load()
+        finally:
+            os.unlink(temp_path)
+
+    def test_invalid_role_warns(self):
+        yaml_content = """
+domains:
+  - id: test.site
+    url: https://example.com
+    role: primary
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(yaml_content)
+            temp_path = f.name
+
+        try:
+            loader = ConfigLoader(temp_path)
+            loader.load()
+            assert any("role 'primary'" in w for w in loader.validation_warnings)
+        finally:
+            os.unlink(temp_path)

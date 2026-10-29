@@ -30,6 +30,9 @@ class TestRenderer:
         # Render with a domain that has archive_links
         html = template.render(
             title="test",
+            site_id="test",
+            site_name="Test Site",
+            site_description="A test site",
             health=SiteHealth.UP,
             site={
                 'id': 'test',
@@ -112,6 +115,9 @@ timestamp,site_id,domain_id,domain_status,http_status,latency_ms,failure_type,pr
         # Since we can't run JS directly, we test the template includes the validation logic
         html = template.render(
             title="test",
+            site_id="test",
+            site_name="Test Site",
+            site_description="A test site",
             health=SiteHealth.UP,
             site={
                 'id': 'test',
@@ -609,6 +615,28 @@ http.get('http://127.0.0.1:8081/logs/test/example.com.log', (res) => {
 
         site_file = temp_renderer.output_dir / "test.html"
         assert site_file.exists()
+
+    def test_site_display_name_and_description(self, temp_renderer, sample_aggregated_data):
+        temp_renderer.site_configs = {
+            "test": {"name": "Test Site", "description": "A display description"}
+        }
+        temp_renderer.build_static_site(sample_aggregated_data)
+
+        index = (temp_renderer.output_dir / "index.html").read_text()
+        site_page = (temp_renderer.output_dir / "test.html").read_text()
+
+        assert ">Test Site<" in index
+        assert "A display description" in index
+        assert 'href="test.html"' in index  # filenames still use the internal ID
+        assert "<h1>Test Site</h1>" in site_page
+        assert "A display description" in site_page
+
+    def test_site_page_group_badge_uses_health_class(self, temp_renderer, sample_aggregated_data):
+        sample_aggregated_data["sites"]["test"]["health"] = SiteHealth.DEGRADED
+        temp_renderer.build_static_site(sample_aggregated_data)
+
+        site_page = (temp_renderer.output_dir / "test.html").read_text()
+        assert 'class="status-badge degraded">DEGRADED' in site_page
 
     def test_build_static_site_updates_build_time(self, temp_renderer, sample_aggregated_data):
         original_time = temp_renderer.last_build_time

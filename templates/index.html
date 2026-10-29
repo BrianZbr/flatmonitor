@@ -35,9 +35,13 @@
     {% for site in sites %}
     <div class="site-card">
         <div class="site-card-header">
-            <a href="{{ site.id }}.html" class="site-card-title">{{ site.id }}</a>
+            <a href="{{ site.id }}.html" class="site-card-title">{{ site.name }}</a>
             <span class="status-badge {{ site.health.value|health_class }}">{{ site.health.value }}</span>
         </div>
+
+        {% if site.description %}
+        <div class="site-description">{{ site.description }}</div>
+        {% endif %}
 
         <!-- Mini Summary -->
         <div class="site-mini-summary">

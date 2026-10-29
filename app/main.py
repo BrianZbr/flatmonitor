@@ -20,7 +20,7 @@ from threading import Thread, Lock
 from typing import Optional
 
 from app.models import DomainConfig, Result
-from app.config import ConfigLoader
+from app.config import ConfigLoader, parse_site_configs
 from app.scheduler import Scheduler
 from app.runner import Runner
 from app.storage import Storage
@@ -138,7 +138,11 @@ class FlatMonitor:
             output_dir=self.output_dir,
             noindex=self.config_loader.noindex,
             dashboard_config=dashboard_config,
-            storage_backend=storage_backend
+            storage_backend=storage_backend,
+            site_configs={
+                site_id: cfg.model_dump()
+                for site_id, cfg in self.config_loader.site_configs.items()
+            }
         )
 
         # Initialize scheduler with loaded domains
@@ -350,6 +354,12 @@ class FlatMonitor:
             }
             # Update rebuild throttle if changed
             self.renderer.min_build_interval = self.renderer.dashboard_config.get('build_interval_seconds', 30)
+
+            # Site display metadata is safe to reload without restarting.
+            self.renderer.site_configs = {
+                site_id: cfg.model_dump()
+                for site_id, cfg in parse_site_configs(config_data).items()
+            }
 
             logger.debug("Dashboard config reloaded")
         except Exception as e:

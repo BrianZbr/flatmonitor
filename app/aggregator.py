@@ -271,36 +271,41 @@ class Aggregator:
 
     def _determine_site_health(self, domain_states: Dict[str, Dict]) -> SiteHealth:
         """
-        Determine site health based on domain states:
-        - DOWN: Any domain is DOWN or TIMEOUT (2+ consecutive failures)
-        - DEGRADED: Any domain is DEGRADED (1 failure)
-        - UP: All domains are UP or PROTECTED
-        - UNKNOWN: All domains have no data (UNKNOWN)
+        Determine site health based on domain states.
+
+        Group status is intentionally less severe than a single domain outage:
+        - DOWN: every domain is DOWN or TIMEOUT
+        - DEGRADED: some but not all domains are DOWN/TIMEOUT, or any domain is
+          DEGRADED/UNKNOWN while others have data
+        - UP: all domains are UP, PROTECTED, or the deprecated BOT_DETECTED
+        - UNKNOWN: no domain has data yet
         """
         if not domain_states:
             return SiteHealth.UNKNOWN
 
-        has_degraded = False
-        has_unknown = False
-        has_up_protected = False
+        total = len(domain_states)
+        down_or_timeout = 0
+        degraded = 0
+        unknown = 0
 
         for state in domain_states.values():
-            if state["status"] in (DomainStatus.DOWN, DomainStatus.TIMEOUT):
-                return SiteHealth.DOWN
-            if state["status"] == DomainStatus.DEGRADED:
-                has_degraded = True
-            if state["status"] == DomainStatus.UNKNOWN:
-                has_unknown = True
-            if state["status"] in (DomainStatus.UP, DomainStatus.PROTECTED):
-                has_up_protected = True
+            status = state["status"]
+            if status in (DomainStatus.DOWN, DomainStatus.TIMEOUT):
+                down_or_timeout += 1
+            elif status == DomainStatus.DEGRADED:
+                degraded += 1
+            elif status == DomainStatus.UNKNOWN:
+                unknown += 1
 
-        # All unknown = gray (new site with no data)
-        if has_unknown and not has_up_protected and not has_degraded:
-            return SiteHealth.UNKNOWN
-        # Mixed unknown + up = down (partial data is problematic)
-        if has_unknown:
+        # A complete outage is still red.
+        if down_or_timeout == total:
             return SiteHealth.DOWN
-        if has_degraded:
+        # Partial outage, incomplete data, or a single bucket failure is yellow.
+        if down_or_timeout > 0:
+            return SiteHealth.DEGRADED
+        if unknown == total:
+            return SiteHealth.UNKNOWN
+        if unknown > 0 or degraded > 0:
             return SiteHealth.DEGRADED
 
         return SiteHealth.UP
