@@ -51,39 +51,31 @@
             {% if site.down_count > 0 %}<span class="count" style="color: #f85149;">{{ site.down_count }} DOWN</span>{% endif %}
             {% if site.timeout_count > 0 %}<span class="count" style="color: #f85149;">{{ site.timeout_count }} TIMEOUT</span>{% endif %}
             {% if site.unknown_count > 0 %}<span class="count" style="color: #6e7681;">{{ site.unknown_count }} UNKNOWN</span>{% endif %}
+            {% if site.collecting_count > 0 %}<span class="count" style="color: #316dca;">{{ site.collecting_count }} COLLECTING</span>{% endif %}
         </div>
 
-        <!-- Dense Domain List -->
+        {% if site.domains %}
         <ul class="domain-list-dense">
             {%- for domain in site.domains %}
-            <li class="domain-item-dense">
-                <div class="domain-left-group">
-                    {% if not domain.link_disabled %}
-                    <a href="{{ domain.url }}" class="domain-link" target="_blank" rel="noopener noreferrer" title="{{ domain.url }}">
-                        {{ domain.url | replace('https://', '') | replace('http://', '') }}
-                    </a>
-                    {% else %}
-                    <span class="domain-link-disabled" title="{{ domain.url }}">{{ domain.url | replace('https://', '') | replace('http://', '') }}</span>
-                    {% endif %}
-
-                    <div class="mini-timeline-inline">
-                        {%- for span in domain.timeline %}
-                        <span class="{{ span.class }}"></span>
-                        {%- endfor %}
-                    </div>
-                </div>
-
-                <div class="status-col">
-                    <a href="{{ site.id }}.html#{{ domain.id }}" class="status-badge compact {{ domain.status.value|status_class }}" title="{{ domain.status.value }} - Click for details">
-                        {{ domain.status.value }}
-                    </a>
-                    {% if domain.last_check.cert_expiry|format_cert_expiry != 'N/A' and '⚠' in domain.last_check.cert_expiry|format_cert_expiry %}
-                    <span class="cert-warning" title="Certificate expiring soon: {{ domain.last_check.cert_expiry|format_cert_expiry }}">⚠</span>
-                    {% endif %}
-                </div>
-            </li>
+            {% include "_domain_row.html" %}
             {%- endfor %}
         </ul>
+        {% endif %}
+
+        {% for section in site.sections %}
+        <div class="domain-subsection">
+            <div class="domain-subsection-header">
+                <span class="domain-subsection-title">{{ section.name }}</span>
+                <span class="domain-subsection-counts">{{ section.counts_label }}</span>
+            </div>
+            {% if section.description %}<div class="domain-subsection-description">{{ section.description }}</div>{% endif %}
+            <ul class="domain-list-dense">
+                {%- for domain in section.domains %}
+                {% include "_domain_row.html" %}
+                {%- endfor %}
+            </ul>
+        </div>
+        {% endfor %}
     </div>
     {% endfor %}
 </div>

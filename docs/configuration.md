@@ -7,6 +7,9 @@
 | `id` | string | Yes | - | Unique identifier (format: `site.domain`) |
 | `url` | string | Yes | - | URL to monitor |
 | `role` | string | No | - | Documentation hint: `core` or `supplementary` |
+| `name` | string | No | - | Optional display label shown on the site page |
+| `description` | string | No | - | Optional note shown on the site page |
+| `section` | string | No | - | Optional subsection id defined under `sites.<site>.sections` |
 | `interval_seconds` | int | No | 60 | Polling interval per domain (min: 10). Slower intervals (e.g. 300) reduce load on aggressive/rate-limited sites |
 | `timeout_seconds` | int | No | 20 | HTTP timeout (min: 1, max: 60) |
 | `expect` | object | No | `{http_status: 200}` | Expected response criteria |
@@ -21,12 +24,14 @@ Safeguard: if the entire history window contains **no** successful signal (no UP
 
 ## Site Health Determination
 
-- **UP**: All domains UP, PROTECTED, or BOT_DETECTED
-- **DEGRADED**: Some but not all domains are DOWN/TIMEOUT; or any domain is DEGRADED/UNKNOWN while others have data
-- **DOWN**: Every domain is DOWN or TIMEOUT
-- **UNKNOWN**: No domain has data yet
+- **UP**: All observed domains are UP, PROTECTED, or BOT_DETECTED
+- **DEGRADED**: Some but not all observed domains are DOWN/TIMEOUT; or any domain is DEGRADED/UNKNOWN while others have data
+- **DOWN**: Every observed domain is DOWN or TIMEOUT
+- **UNKNOWN**: No observed domain has data yet
 
 A single failed mirror therefore makes the group DEGRADED (yellow), not DOWN (red). A complete group outage still shows DOWN.
+
+Domains with too little collected data are marked **COLLECTING** and excluded from group health until they have `settings.health.collecting_min_checks` checks (default 3). This keeps a newly added mirror from turning its group red or green prematurely.
 
 ## Site Display Metadata
 
@@ -42,6 +47,27 @@ sites:
 ```
 
 If no entry exists, the group displays its internal ID.
+
+### Domain subsections
+
+Repeated domains can share one subsection title and description instead of repeating labels on every row:
+
+```yaml
+sites:
+  annas:
+    name: "Anna's Archive"
+    sections:
+      download:
+        name: "Download servers"
+        description: "Temporary endpoints; HTTP 403 'Link expired or invalid' is expected."
+
+domains:
+  - id: annas.dl1
+    url: https://yqrii5.org
+    section: download
+```
+
+Domains without a `section` render first as the default list; named subsections follow in the order they appear under `sites.<site>.sections`. Section metadata is display-only; group health still aggregates all domains.
 
 ## Dashboard Customization
 
@@ -94,6 +120,7 @@ settings:
   health:
     heartbeat_url: "https://hc-ping.com/your-uuid-here"  # URL to ping periodically
     heartbeat_interval_seconds: 300                        # Seconds between pings (default: 60, min: 10)
+    collecting_min_checks: 3                               # Checks before a new domain stops being COLLECTING
 ```
 
 The `heartbeat_url` also supports `${VAR}` environment variable expansion (e.g. `"https://hc-ping.com/${FLATMONITOR_HEARTBEAT_UUID}"`), keeping the UUID out of your config files. You can use either form — a literal value passes through unchanged.
@@ -103,6 +130,10 @@ When a `heartbeat_url` is configured, FlatMonitor sends periodic GET requests to
 The heartbeat pinger runs independently of the health HTTP endpoint — you do **not** need `FLATMONITOR_HEALTH_PORT` set for heartbeats to be sent. Setting the health port additionally exposes the `/health` JSON endpoint described in [deployment.md](deployment.md).
 
 Useful with uptime monitoring services like Healthchecks.io, Better Uptime, or Cronitor to get alerted when FlatMonitor itself goes down.
+
+## Status JSON
+
+FlatMonitor writes `status.json` next to `index.html` on each build. It contains the generated time, instance label, site health, and per-domain status, display status, collecting flag, coverage, and last check details. This is intended for external alerting or future multi-origin comparison.
 
 ## Latency Threshold
 

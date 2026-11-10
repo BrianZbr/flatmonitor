@@ -1,9 +1,17 @@
 <div class="legend">
-    <div class="legend-item" title="Site is accessible (UP) or behind expected bot protection (PROTECTED)">
+    <div class="legend-item" title="Page loaded and expected content matched">
         <div class="legend-color up"></div>
-        <span>Up / Protected</span>
+        <span>Up</span>
     </div>
-    <div class="legend-item" title="1 check failed in 5-minute window">
+    <div class="legend-item" title="Service is alive behind a bot challenge; content was not verified">
+        <div class="legend-color protected"></div>
+        <span>Protected</span>
+    </div>
+    <div class="legend-item" title="New domain with too little data; excluded from group health">
+        <div class="legend-color collecting"></div>
+        <span>Collecting</span>
+    </div>
+    <div class="legend-item" title="1 check failed in 5-minute window, or a group has a partial outage">
         <div class="legend-color degraded"></div>
         <span>Degraded</span>
     </div>
@@ -21,8 +29,9 @@
     {% if footer_explanation %}
     {{ footer_explanation | safe }}
     {% else %}
-    <strong>How to read:</strong> Green = site is UP or behind expected protection (PROTECTED).
-    Yellow = 1 check failed in 5-minute window (DEGRADED).
+    <strong>How to read:</strong> Green = UP (content verified) or PROTECTED (alive behind a bot challenge; content not verified).
+    Blue = COLLECTING (new domain with too little data; excluded from group health).
+    Yellow = 1 check failed, or a group has only some members down (DEGRADED).
     Red = 2+ failures (DOWN), unexpected response, or timed out (TIMEOUT).
     Gray = no recent data (UNKNOWN).
     Timeline shows last 4 hours (newest right).

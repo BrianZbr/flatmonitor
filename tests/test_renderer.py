@@ -638,6 +638,46 @@ http.get('http://127.0.0.1:8081/logs/test/example.com.log', (res) => {
         site_page = (temp_renderer.output_dir / "test.html").read_text()
         assert 'class="status-badge degraded">DEGRADED' in site_page
 
+    def test_sections_collecting_and_status_json(self, temp_renderer, sample_aggregated_data):
+        import json
+
+        test_site = sample_aggregated_data["sites"]["test"]
+        test_site["domains"]["test.site1"]["section"] = "download"
+        test_site["domains"]["test.site1"]["name"] = "Download server 1"
+        test_site["domains"]["test.site1"]["description"] = "403 expected"
+        test_site["domains"]["test.site1"]["coverage"] = {
+            "hours": 2.0, "checks": 20, "first_seen": "2026-01-01T00:00:00+00:00"
+        }
+        test_site["domains"]["test.site2"]["collecting"] = True
+        test_site["domains"]["test.site2"]["coverage"] = {
+            "hours": 0.1, "checks": 1, "first_seen": "2026-01-01T00:00:00+00:00"
+        }
+        temp_renderer.site_configs = {
+            "test": {
+                "name": "Test Site",
+                "sections": {
+                    "download": {
+                        "name": "Download servers",
+                        "description": "Temporary endpoints",
+                    }
+                },
+            }
+        }
+        temp_renderer.build_static_site(sample_aggregated_data)
+
+        index = (temp_renderer.output_dir / "index.html").read_text()
+        site_page = (temp_renderer.output_dir / "test.html").read_text()
+        status = json.loads((temp_renderer.output_dir / "status.json").read_text())
+
+        assert "Download servers" in index
+        assert "COLLECTING" in index
+        assert "Download servers" in site_page
+        assert "Collecting data" in site_page
+        assert status["instance_label"] is None
+        domains = {d["id"]: d for d in status["sites"][0]["domains"]}
+        assert domains["test.site1"]["section"] == "download"
+        assert domains["test.site2"]["collecting"] is True
+
     def test_build_static_site_updates_build_time(self, temp_renderer, sample_aggregated_data):
         original_time = temp_renderer.last_build_time
 

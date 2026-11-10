@@ -32,11 +32,13 @@ class Bucket:
 class Aggregator:
     """Aggregates results into time buckets and determines health states."""
 
-    def __init__(self, bucket_minutes: int = 5, history_hours: int = 4, data_dir: str = "data"):
+    def __init__(self, bucket_minutes: int = 5, history_hours: int = 4, data_dir: str = "data",
+                 collecting_min_checks: int = 3):
         self.bucket_minutes = bucket_minutes
         self.history_hours = history_hours
         self.total_buckets = int((history_hours * 60) / bucket_minutes)  # 48 buckets for 4 hours
         self.cert_storage = CertStorage(data_dir=data_dir, ttl_seconds=86400)
+        self.collecting_min_checks = collecting_min_checks
 
     def process_recent_data(self, storage, sites: Dict[str, List[DomainConfig]]) -> Dict:
         """
@@ -81,9 +83,18 @@ class Aggregator:
             last_check = self._get_last_check_details(results, domain)
             last_check_times[domain.id] = last_check.get("timestamp", "")
 
+            coverage = self._get_domain_coverage(storage, site_id, domain, results)
+            collecting = coverage["checks"] < self.collecting_min_checks
+
             domain_states[domain.id] = {
                 "status": current_status,
+                "collecting": collecting,
+                "coverage": coverage,
                 "url": domain.url,
+                "name": domain.name,
+                "description": domain.description,
+                "role": domain.role,
+                "section": domain.section,
                 "link_disabled": domain.link_disabled,
                 "last_check": last_check,
                 "expected": {
@@ -108,6 +119,36 @@ class Aggregator:
             "buckets": domain_buckets,
             "bucket_count": self.total_buckets,
             "last_check": most_recent_check
+        }
+
+    def _get_domain_coverage(self, storage, site_id: str,
+                             domain: DomainConfig, results: List[Result]) -> Dict:
+        """Get first-seen/check-count coverage, with a result-window fallback."""
+        getter = getattr(storage, "get_domain_coverage", None)
+        if callable(getter):
+            try:
+                coverage = getter(site_id, domain.id)
+                if isinstance(coverage, dict):
+                    return coverage
+            except Exception:
+                pass
+
+        if not results:
+            return {"hours": 0.0, "checks": 0, "first_seen": None}
+        timestamps = []
+        for result in results:
+            try:
+                timestamps.append(datetime.fromisoformat(result.timestamp.replace("Z", "+00:00")))
+            except ValueError:
+                continue
+        if not timestamps:
+            return {"hours": 0.0, "checks": 0, "first_seen": None}
+        first = min(timestamps)
+        hours = max(0.0, (datetime.now(timezone.utc) - first).total_seconds() / 3600)
+        return {
+            "hours": round(hours, 2),
+            "checks": len(results),
+            "first_seen": first.isoformat(),
         }
 
     def _get_last_check_details(self, results: List[Result],
@@ -280,15 +321,19 @@ class Aggregator:
         - UP: all domains are UP, PROTECTED, or the deprecated BOT_DETECTED
         - UNKNOWN: no domain has data yet
         """
-        if not domain_states:
+        observed = {
+            domain_id: state for domain_id, state in domain_states.items()
+            if not state.get("collecting", False)
+        }
+        if not observed:
             return SiteHealth.UNKNOWN
 
-        total = len(domain_states)
+        total = len(observed)
         down_or_timeout = 0
         degraded = 0
         unknown = 0
 
-        for state in domain_states.values():
+        for state in observed.values():
             status = state["status"]
             if status in (DomainStatus.DOWN, DomainStatus.TIMEOUT):
                 down_or_timeout += 1

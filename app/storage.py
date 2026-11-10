@@ -6,13 +6,14 @@ CSV storage with rotation and retention. Single-writer pattern for thread safety
 
 import os
 import csv
+import time
 import shutil
 import logging
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
-from app.models import Result, DomainConfig
+from app.models import Result, DomainConfig, get_log_filename
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ class Storage:
         # CSV headers - derived from Result model for consistency
         self.headers = Result.get_csv_headers()
         self.schema_version = 2  # Increment on breaking changes
+        self._coverage_cache: Dict[Tuple[str, str], Tuple[float, Dict]] = {}
 
     def append_csv(self, result: Result, health_checker=None) -> str:
         """
@@ -67,6 +69,8 @@ class Storage:
                     writer.writerow(self.headers)
                 writer.writerow(result.to_csv_row())
 
+            self._coverage_cache.pop((result.site_id, result.domain_id), None)
+
             if health_checker:
                 health_checker.report_write_success()
             return StorageResult.SUCCESS
@@ -76,6 +80,59 @@ class Storage:
             if health_checker:
                 health_checker.report_write_failure(str(e))
             return StorageResult.FAILURE
+
+    def get_domain_coverage(self, site_id: str, domain_id: str,
+                            ttl_seconds: int = 300) -> Dict:
+        """Return first-seen time and total check count for a domain.
+
+        Scans the live and archived CSV logs once per TTL. The count is exact for
+        retained history; first_seen is the oldest timestamp still on disk.
+        """
+        key = (site_id, domain_id)
+        now_ts = time.time()
+        cached = self._coverage_cache.get(key)
+        if cached and (now_ts - cached[0]) < ttl_seconds:
+            return dict(cached[1])
+
+        domain_name = get_log_filename(site_id, domain_id)
+        paths = [self.live_dir / site_id / f"{domain_name}.log"]
+        paths.extend(sorted(self.archive_dir.glob(f"*/{site_id}/{domain_name}.log")))
+
+        first_seen = None
+        checks = 0
+        for path in paths:
+            if not path.exists():
+                continue
+            file_first = None
+            try:
+                with open(path, "r", newline="") as f:
+                    for row in csv.reader(f):
+                        if not row or row[0].startswith("#") or row[0] == "timestamp":
+                            continue
+                        checks += 1
+                        if file_first is None:
+                            try:
+                                file_first = datetime.fromisoformat(row[0].replace("Z", "+00:00"))
+                            except ValueError:
+                                file_first = None
+            except OSError as exc:
+                logger.warning(f"Failed to read coverage for {path}: {exc}")
+                continue
+            if file_first and (first_seen is None or file_first < first_seen):
+                first_seen = file_first
+
+        if first_seen:
+            hours = max(0.0, (datetime.now(timezone.utc) - first_seen).total_seconds() / 3600)
+            coverage = {
+                "hours": round(hours, 2),
+                "checks": checks,
+                "first_seen": first_seen.isoformat(),
+            }
+        else:
+            coverage = {"hours": 0.0, "checks": 0, "first_seen": None}
+
+        self._coverage_cache[key] = (now_ts, coverage)
+        return dict(coverage)
 
     def read_domain_results(self, site_id: str, domain_id: str,
                            hours: int = 4) -> List[Result]:

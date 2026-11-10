@@ -113,7 +113,12 @@ class FlatMonitor:
 
         # Initialize components
         self.storage = Storage(data_dir=self.data_dir, retention_days=self.config_loader.retention_days)
-        self.aggregator = Aggregator(bucket_minutes=5, history_hours=4, data_dir=self.data_dir)
+        self.aggregator = Aggregator(
+            bucket_minutes=5,
+            history_hours=4,
+            data_dir=self.data_dir,
+            collecting_min_checks=self.config_loader.health.collecting_min_checks,
+        )
 
         # Create storage backend for dashboard output (R2, S3, or filesystem)
         storage_backend = create_storage_backend(self.config_loader.storage.__dict__)

@@ -804,3 +804,62 @@ domains:
             assert any("role 'primary'" in w for w in loader.validation_warnings)
         finally:
             os.unlink(temp_path)
+
+    def test_parse_site_sections_and_domain_labels(self):
+        yaml_content = """
+settings:
+  health:
+    collecting_min_checks: 5
+sites:
+  annas:
+    name: "Anna's Archive"
+    sections:
+      download:
+        name: "Download servers"
+        description: "Temporary endpoints"
+domains:
+  - id: annas.gl
+    url: https://annas-archive.gl
+  - id: annas.dl1
+    url: https://yqrii5.org
+    section: download
+    name: "Download server 1"
+    description: "403 expected"
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(yaml_content)
+            temp_path = f.name
+
+        try:
+            loader = ConfigLoader(temp_path)
+            domains = loader.load()
+            assert loader.health.collecting_min_checks == 5
+            assert loader.site_configs["annas"].sections["download"].name == "Download servers"
+            assert loader.site_configs["annas"].sections["download"].description == "Temporary endpoints"
+            assert domains[1].section == "download"
+            assert domains[1].name == "Download server 1"
+            assert domains[1].description == "403 expected"
+            assert loader.validation_warnings == []
+        finally:
+            os.unlink(temp_path)
+
+    def test_domain_section_requires_site_section_definition(self):
+        yaml_content = """
+sites:
+  annas:
+    name: "Anna's Archive"
+domains:
+  - id: annas.dl1
+    url: https://yqrii5.org
+    section: download
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(yaml_content)
+            temp_path = f.name
+
+        try:
+            loader = ConfigLoader(temp_path)
+            with pytest.raises(ValueError, match="section 'download' is not defined"):
+                loader.load()
+        finally:
+            os.unlink(temp_path)

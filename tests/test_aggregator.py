@@ -489,6 +489,12 @@ class TestAggregator:
             )
         ]
 
+        mock_storage.get_domain_coverage.return_value = {
+            "hours": 1.0,
+            "checks": 10,
+            "first_seen": now.isoformat(),
+        }
+
         sites = {"test": [sample_domain]}
         result = aggregator.process_recent_data(mock_storage, sites)
 
@@ -496,6 +502,21 @@ class TestAggregator:
         assert "test" in result["sites"]
         assert result["sites"]["test"]["health"] == SiteHealth.UP
         assert "generated_at" in result
+
+
+    def test_collecting_domains_are_excluded_from_group_health(self, aggregator):
+        domain_states = {
+            "new.site": {"status": DomainStatus.DOWN, "collecting": True},
+            "stable.site": {"status": DomainStatus.UP, "collecting": False},
+        }
+        assert aggregator._determine_site_health(domain_states) == SiteHealth.UP
+
+    def test_all_collecting_domains_are_unknown(self, aggregator):
+        domain_states = {
+            "new1.site": {"status": DomainStatus.DOWN, "collecting": True},
+            "new2.site": {"status": DomainStatus.UP, "collecting": True},
+        }
+        assert aggregator._determine_site_health(domain_states) == SiteHealth.UNKNOWN
 
 
 class TestDomainNameExtraction:

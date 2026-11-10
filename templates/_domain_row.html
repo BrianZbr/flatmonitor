@@ -1,0 +1,40 @@
+<li class="domain-item-dense">
+    <div class="domain-left-group">
+        {% if domain.name and not domain.section %}
+        <div class="domain-meta">
+            <div class="domain-name">{{ domain.name }}</div>
+            {% if not domain.link_disabled %}
+            <a href="{{ domain.url }}" class="domain-link" target="_blank" rel="noopener noreferrer" title="{{ domain.url }}">
+                {{ domain.url | replace('https://', '') | replace('http://', '') }}
+            </a>
+            {% else %}
+            <span class="domain-link-disabled" title="{{ domain.url }}">{{ domain.url | replace('https://', '') | replace('http://', '') }}</span>
+            {% endif %}
+            {% if domain.description %}<div class="domain-subtext">{{ domain.description }}</div>{% endif %}
+        </div>
+        {% else %}
+        {% if not domain.link_disabled %}
+        <a href="{{ domain.url }}" class="domain-link" target="_blank" rel="noopener noreferrer" title="{{ domain.url }}">
+            {{ domain.url | replace('https://', '') | replace('http://', '') }}
+        </a>
+        {% else %}
+        <span class="domain-link-disabled" title="{{ domain.url }}">{{ domain.url | replace('https://', '') | replace('http://', '') }}</span>
+        {% endif %}
+        {% endif %}
+
+        <div class="mini-timeline-inline">
+            {%- for span in domain.timeline %}
+            <span class="{{ span.class }}"></span>
+            {%- endfor %}
+        </div>
+    </div>
+
+    <div class="status-col">
+        <a href="{{ site.id }}.html#{{ domain.id }}" class="status-badge compact {{ domain.status_class }}" title="{{ domain.display_status }}{% if domain.last_check.protection_type %} ({{ domain.last_check.protection_type }}){% endif %} - Click for details">
+            {{ domain.display_status }}
+        </a>
+        {% if domain.last_check.cert_expiry|format_cert_expiry != 'N/A' and '⚠' in domain.last_check.cert_expiry|format_cert_expiry %}
+        <span class="cert-warning" title="Certificate expiring soon: {{ domain.last_check.cert_expiry|format_cert_expiry }}">⚠</span>
+        {% endif %}
+    </div>
+</li>

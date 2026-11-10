@@ -93,10 +93,19 @@ class DashboardConfig(BaseModel):
     static_files: ListType[str] = Field(default_factory=list, description="Static HTML files in public/ root to upload to cloud storage")
 
 
+class SiteSectionConfig(BaseModel):
+    """Display metadata for a subsection within a site group."""
+    name: str = Field(..., description="Display name for the subsection")
+    description: Optional[str] = Field(default=None, description="Optional subsection description")
+
+
 class SiteConfig(BaseModel):
     """Display metadata for a site group. Internal IDs are unchanged."""
     name: Optional[str] = Field(default=None, description="Display name for the group")
     description: Optional[str] = Field(default=None, description="Optional short description")
+    sections: Dict[str, SiteSectionConfig] = Field(
+        default_factory=dict, description="Optional domain subsections, keyed by section id"
+    )
 
 
 class StorageConfig(BaseModel):
@@ -112,6 +121,7 @@ class HealthConfig(BaseModel):
     """Health check configuration."""
     heartbeat_url: Optional[str] = Field(default=None, description="URL to send heartbeat GET requests to")
     heartbeat_interval_seconds: int = Field(default=60, ge=10, description="Interval between heartbeat pings in seconds")
+    collecting_min_checks: int = Field(default=3, ge=1, description="Checks required before a new domain stops being COLLECTING")
 
 
 def parse_site_configs(config_data: Dict) -> Dict[str, SiteConfig]:
@@ -124,9 +134,21 @@ def parse_site_configs(config_data: Dict) -> Dict[str, SiteConfig]:
     for site_id, raw in raw_sites.items():
         if not isinstance(raw, dict):
             raise ValueError(f"Configuration site '{site_id}' must be a mapping")
+        raw_sections = raw.get("sections") or {}
+        if not isinstance(raw_sections, dict):
+            raise ValueError(f"Configuration site '{site_id}' sections must be a mapping")
+        sections: Dict[str, SiteSectionConfig] = {}
+        for section_id, section_raw in raw_sections.items():
+            if not isinstance(section_raw, dict):
+                raise ValueError(f"Configuration site '{site_id}' section '{section_id}' must be a mapping")
+            sections[str(section_id)] = SiteSectionConfig(
+                name=section_raw.get("name") or str(section_id),
+                description=section_raw.get("description"),
+            )
         sites[str(site_id)] = SiteConfig(
             name=raw.get("name"),
             description=raw.get("description"),
+            sections=sections,
         )
     return sites
 
@@ -214,6 +236,7 @@ class ConfigLoader:
         self.health = HealthConfig(
             heartbeat_url=expand_env_vars(raw_heartbeat_url, 'settings.health.heartbeat_url') if raw_heartbeat_url else None,
             heartbeat_interval_seconds=health_settings.get('heartbeat_interval_seconds', 60),
+            collecting_min_checks=health_settings.get('collecting_min_checks', 3),
         )
 
         # Check for duplicate domain IDs before parsing
@@ -308,12 +331,16 @@ class ConfigLoader:
         if not isinstance(health, dict):
             err("settings.health must be a mapping")
             health = {}
-        for key in sorted(set(health) - {"heartbeat_url", "heartbeat_interval_seconds"}):
+        for key in sorted(set(health) - {"heartbeat_url", "heartbeat_interval_seconds", "collecting_min_checks"}):
             warn(f"unknown health key 'settings.health.{key}'")
         if "heartbeat_interval_seconds" in health:
             value = health["heartbeat_interval_seconds"]
             if not isinstance(value, int) or isinstance(value, bool) or value < 10:
                 err("settings.health.heartbeat_interval_seconds must be an integer >= 10")
+        if "collecting_min_checks" in health:
+            value = health["collecting_min_checks"]
+            if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+                err("settings.health.collecting_min_checks must be an integer >= 1")
 
         # storage
         storage = settings.get("storage", {}) or {}
@@ -328,17 +355,33 @@ class ConfigLoader:
         # sites (optional display metadata)
         sites = data.get("sites", {}) or {}
         if not isinstance(sites, dict):
-            err("'sites' must be a mapping of site_id -> {name, description}")
+            err("'sites' must be a mapping of site_id -> {name, description, sections}")
             sites = {}
+        site_section_ids: Dict[str, set] = {}
         for site_id, raw in sites.items():
             if not isinstance(raw, dict):
                 err(f"sites.{site_id} must be a mapping")
                 continue
-            for key in sorted(set(raw) - {"name", "description"}):
+            for key in sorted(set(raw) - {"name", "description", "sections"}):
                 warn(f"unknown sites.{site_id} key '{key}'")
             for key in ("name", "description"):
                 if key in raw and raw[key] is not None and not isinstance(raw[key], str):
                     err(f"sites.{site_id}.{key} must be a string")
+            raw_sections = raw.get("sections") or {}
+            if not isinstance(raw_sections, dict):
+                err(f"sites.{site_id}.sections must be a mapping")
+                continue
+            site_section_ids[str(site_id)] = set()
+            for section_id, section_raw in raw_sections.items():
+                if not isinstance(section_raw, dict):
+                    err(f"sites.{site_id}.sections.{section_id} must be a mapping")
+                    continue
+                site_section_ids[str(site_id)].add(str(section_id))
+                for key in sorted(set(section_raw) - {"name", "description"}):
+                    warn(f"unknown sites.{site_id}.sections.{section_id} key '{key}'")
+                for key in ("name", "description"):
+                    if key in section_raw and section_raw[key] is not None and not isinstance(section_raw[key], str):
+                        err(f"sites.{site_id}.sections.{section_id}.{key} must be a string")
 
         # domains
         domains = data.get("domains")
@@ -350,6 +393,7 @@ class ConfigLoader:
         seen_ids: Dict[str, int] = {}
         duplicates: List[str] = []
         domain_site_ids = set()
+        used_sections = set()
 
         for i, raw in enumerate(domains):
             context = f"domains[{i}]"
@@ -393,6 +437,19 @@ class ConfigLoader:
             if "role" in raw and raw["role"] not in (None, "core", "supplementary"):
                 warn(f"{context}.role '{raw['role']}' is not 'core' or 'supplementary'")
 
+            for key in ("name", "description", "section"):
+                if key in raw and raw[key] is not None and not isinstance(raw[key], str):
+                    err(f"{context}.{key} must be a string or null")
+            section = raw.get("section")
+            if section is not None:
+                site_id = domain_id.split(".", 1)[0] if isinstance(domain_id, str) and "." in domain_id else "default"
+                if site_id not in sites:
+                    err(f"{context}.section '{section}' requires a sites.{site_id} entry")
+                elif section not in site_section_ids.get(site_id, set()):
+                    err(f"{context}.section '{section}' is not defined under sites.{site_id}.sections")
+                else:
+                    used_sections.add((site_id, section))
+
             expect = raw.get("expect", {}) or {}
             if not isinstance(expect, dict):
                 err(f"{context}.expect must be a mapping")
@@ -427,6 +484,10 @@ class ConfigLoader:
                 + ". Each domain must have a unique 'id' field."
             )
 
+        for site_id, section_ids in site_section_ids.items():
+            for section_id in sorted(section_ids - {sec for sid, sec in used_sections if sid == site_id}):
+                warn(f"sites.{site_id}.sections.{section_id} has no matching domains")
+
         for site_id in sorted(set(sites) - domain_site_ids):
             warn(f"sites.{site_id} has no matching domains")
 
@@ -458,6 +519,9 @@ class ConfigLoader:
             id=raw["id"],
             url=raw["url"],
             role=raw.get("role"),
+            name=raw.get("name"),
+            description=raw.get("description"),
+            section=raw.get("section"),
             expect=expect,
             bot_protection_string=raw.get("bot_protection_string"),
             timeout=raw.get("timeout", 20),

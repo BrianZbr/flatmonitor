@@ -824,6 +824,106 @@ header {
 /* ============================================
    RESPONSIVE STYLES
    ============================================ */
+/* Domain labels, subsections, and collecting state */
+.domain-name {
+    color: var(--text-primary);
+    font-size: 0.78rem;
+    font-weight: 500;
+    line-height: 1.3;
+}
+
+.domain-subtext {
+    color: var(--text-muted);
+    font-size: 0.68rem;
+    line-height: 1.3;
+}
+
+.domain-left-group {
+    gap: 0.65rem;
+}
+
+.domain-left-group .domain-meta {
+    flex: 0 0 180px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+}
+
+.domain-meta .domain-link {
+    flex: 0 1 auto;
+    width: auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.domain-item-dense .status-col {
+    flex: 0 0 112px;
+    width: 112px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    margin-left: 0;
+}
+
+.domain-subsection {
+    margin-top: 0.65rem;
+    padding-top: 0.55rem;
+    border-top: 1px solid var(--border-subtle);
+}
+
+.domain-subsection-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.domain-subsection-title {
+    color: var(--text-primary);
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.domain-subsection-counts {
+    color: var(--text-muted);
+    font-size: 0.64rem;
+}
+
+.domain-subsection-description {
+    color: var(--text-muted);
+    font-size: 0.68rem;
+    line-height: 1.35;
+    margin: 0.1rem 0 0.15rem;
+}
+
+.domain-subsection .domain-list-dense {
+    margin-top: 0.15rem;
+}
+
+.site-section-header {
+    margin-top: 1rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border-subtle);
+}
+
+.collecting-note {
+    margin: 0.5rem 0;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid #316dca;
+    border-radius: 4px;
+    color: var(--text-muted);
+    background: #0d1117;
+    font-size: 0.72rem;
+}
+
+.status-badge.collecting,
+.legend-color.collecting {
+    background: #316dca;
+    color: #fff;
+}
+
 @media (max-width: 900px) {
     .site-grid {
         grid-template-columns: 1fr;

@@ -511,3 +511,34 @@ class TestStorage:
         path = temp_storage.get_archive_index_path()
         assert path == temp_storage.data_dir / "archive_index.json"
         assert path.parent == temp_storage.data_dir
+
+    def test_domain_coverage_counts_live_rows_and_invalidates_cache(self, temp_storage):
+        now = datetime.now(timezone.utc)
+        first = Result(
+            timestamp=(now - timedelta(hours=1)).isoformat(),
+            site_id="test",
+            domain_id="test.site",
+            domain_status=DomainStatus.UP,
+            http_status=200,
+            latency_ms=100,
+            failure_type=None,
+        )
+        second = Result(
+            timestamp=now.isoformat(),
+            site_id="test",
+            domain_id="test.site",
+            domain_status=DomainStatus.UP,
+            http_status=200,
+            latency_ms=90,
+            failure_type=None,
+        )
+
+        temp_storage.append_csv(first)
+        coverage = temp_storage.get_domain_coverage("test", "test.site")
+        assert coverage["checks"] == 1
+        assert coverage["hours"] >= 0.9
+        assert coverage["first_seen"]
+
+        temp_storage.append_csv(second)
+        coverage = temp_storage.get_domain_coverage("test", "test.site")
+        assert coverage["checks"] == 2

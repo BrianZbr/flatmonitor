@@ -5,6 +5,7 @@ Generates static HTML dashboard using Jinja2 templates.
 """
 
 import os
+import json
 import time
 from pathlib import Path
 from datetime import datetime, timezone
@@ -83,6 +84,148 @@ class Renderer:
             data_path = Path(self.data_dir)
             self.storage.upload_logs(data_path)
 
+    def _format_coverage(self, coverage: Dict) -> str:
+        checks = int(coverage.get("checks") or 0)
+        hours = float(coverage.get("hours") or 0)
+        if checks == 0:
+            return "no data yet"
+        if hours < 1:
+            minutes = max(1, int(round(hours * 60)))
+            return f"{minutes}m · {checks:,} check{'s' if checks != 1 else ''}"
+        return f"{hours:.1f}h · {checks:,} checks"
+
+    def _content_verified_label(self, last_check: Dict) -> str:
+        value = last_check.get("body_contains_pass")
+        if value is True:
+            return "yes"
+        if value is False:
+            return "no — challenge or failed check"
+        return "not configured"
+
+    def _domain_view(self, domain_id: str, domain_info: Dict, buckets: List[Bucket]) -> Dict:
+        collecting = bool(domain_info.get("collecting"))
+        status = domain_info["status"]
+        coverage = domain_info.get("coverage") or {}
+        return {
+            "id": domain_id,
+            "status": status,
+            "display_status": "COLLECTING" if collecting else status.value,
+            "status_class": "collecting" if collecting else self._status_to_css_class(status),
+            "collecting": collecting,
+            "coverage": coverage,
+            "coverage_label": self._format_coverage(coverage),
+            "content_verified": self._content_verified_label(domain_info.get("last_check", {})),
+            "url": domain_info["url"],
+            "name": domain_info.get("name") or "",
+            "description": domain_info.get("description") or "",
+            "section": domain_info.get("section"),
+            "role": domain_info.get("role"),
+            "link_disabled": domain_info["link_disabled"],
+            "last_check": domain_info["last_check"],
+            "expected": domain_info.get("expected", {}),
+            "timeline": self._buckets_to_timeline(buckets),
+        }
+
+    def _sort_domain_views(self, views: List[Dict]) -> List[Dict]:
+        sort_by = self.dashboard_config.get("sort_by", "yaml_order")
+        if sort_by == "alphabetical":
+            return sorted(views, key=lambda d: d["id"])
+        if sort_by == "severity":
+            priority = {
+                DomainStatus.DOWN: 0,
+                DomainStatus.TIMEOUT: 1,
+                DomainStatus.UNKNOWN: 2,
+                DomainStatus.DEGRADED: 2,
+                DomainStatus.PROTECTED: 3,
+                DomainStatus.UP: 4,
+            }
+            return sorted(views, key=lambda d: (0 if d["collecting"] else priority.get(d["status"], 5), d["id"]))
+        return views
+
+    def _count_views(self, views: List[Dict]) -> Dict:
+        counts = {"total": len(views), "up": 0, "protected": 0, "down": 0,
+                  "timeout": 0, "unknown": 0, "collecting": 0}
+        for view in views:
+            if view.get("collecting"):
+                counts["collecting"] += 1
+                continue
+            status = view["status"]
+            if status == DomainStatus.UP:
+                counts["up"] += 1
+            elif status == DomainStatus.PROTECTED:
+                counts["protected"] += 1
+            elif status == DomainStatus.DOWN:
+                counts["down"] += 1
+            elif status == DomainStatus.TIMEOUT:
+                counts["timeout"] += 1
+            else:
+                counts["unknown"] += 1
+        return counts
+
+    def _counts_label(self, counts: Dict) -> str:
+        parts = [f"{counts['total']} domain{'s' if counts['total'] != 1 else ''}"]
+        for key, label in (("up", "UP"), ("protected", "PROTECTED"), ("down", "DOWN"),
+                           ("timeout", "TIMEOUT"), ("unknown", "UNKNOWN"),
+                           ("collecting", "COLLECTING")):
+            if counts.get(key):
+                parts.append(f"{counts[key]} {label}")
+        return " · ".join(parts)
+
+    def _group_site_domains(self, site_meta: Dict, views: List[Dict]):
+        sections_cfg = site_meta.get("sections") or {}
+        known_sections = set(sections_cfg)
+        default_domains = [v for v in views if not v.get("section") or v.get("section") not in known_sections]
+        sections = []
+        for section_id, section_cfg in sections_cfg.items():
+            section_domains = [v for v in views if v.get("section") == section_id]
+            if not section_domains:
+                continue
+            counts = self._count_views(section_domains)
+            sections.append({
+                "id": section_id,
+                "name": section_cfg.get("name") or section_id,
+                "description": section_cfg.get("description") or "",
+                "domains": section_domains,
+                "counts": counts,
+                "counts_label": self._counts_label(counts),
+            })
+        return default_domains, sections
+
+    def _write_status_json(self, site_summaries: List[Dict], generated_at: str) -> None:
+        payload = {
+            "generated_at": generated_at,
+            "instance_label": self.dashboard_config.get("instance_label"),
+            "sites": [],
+        }
+        for site in site_summaries:
+            domains = []
+            for domain in site["domains"] + [d for section in site.get("sections", []) for d in section["domains"]]:
+                domains.append({
+                    "id": domain["id"],
+                    "url": domain["url"],
+                    "name": domain.get("name") or None,
+                    "description": domain.get("description") or None,
+                    "section": domain.get("section"),
+                    "role": domain.get("role"),
+                    "status": domain["status"].value,
+                    "display_status": domain["display_status"],
+                    "collecting": domain["collecting"],
+                    "coverage": domain["coverage"],
+                    "last_check": domain["last_check"],
+                })
+            payload["sites"].append({
+                "id": site["id"],
+                "name": site["name"],
+                "description": site["description"],
+                "health": site["health"].value,
+                "domains": domains,
+            })
+        self.storage.write_file(
+            "status.json",
+            json.dumps(payload, indent=2),
+            content_type="application/json",
+        )
+
     def _build_index(self, aggregated_data: Dict) -> None:
         """Build the main index page with global dashboard."""
         template = self.env.get_template("index.html")
@@ -93,66 +236,32 @@ class Renderer:
 
         for site_id, site_data in sites.items():
             # Process domains with timeline for index page
-            domains_with_timeline = []
+            views = []
             for domain_id, domain_info in site_data["domains"].items():
                 buckets = site_data["buckets"].get(domain_id, [])
-                timeline = self._buckets_to_timeline(buckets)
+                views.append(self._domain_view(domain_id, domain_info, buckets))
 
-                domains_with_timeline.append({
-                    "id": domain_id,
-                    "status": domain_info["status"],
-                    "url": domain_info["url"],
-                    "link_disabled": domain_info["link_disabled"],
-                    "last_check": domain_info["last_check"],
-                    "timeline": timeline
-                })
-
-            # Sort domains based on configuration
-            sort_by = self.dashboard_config.get('sort_by', 'yaml_order')
-            if sort_by == 'yaml_order':
-                # Preserve YAML order (already in insertion order)
-                pass
-            elif sort_by == 'alphabetical':
-                # Sort alphabetically by domain ID
-                domains_with_timeline.sort(key=lambda d: d["id"])
-            else:
-                # severity (default fallback): sort by status severity
-                def domain_sort_key(d):
-                    status_priority = {
-                        DomainStatus.DOWN: 0,
-                        DomainStatus.TIMEOUT: 1,
-                        DomainStatus.BOT_DETECTED: 2,
-                        DomainStatus.UNKNOWN: 3,
-                        DomainStatus.UP: 4
-                    }.get(d["status"], 5)
-                    return (status_priority, d["id"])
-
-                domains_with_timeline.sort(key=domain_sort_key)
-
-            # Calculate domain counts by status
-            domain_count = len(site_data["domains"])
-            domains_list = list(site_data["domains"].values())
-            up_count = sum(1 for d in domains_list if d["status"] == DomainStatus.UP)
-            protected_count = sum(1 for d in domains_list if d["status"] == DomainStatus.PROTECTED)
-            down_count = sum(1 for d in domains_list if d["status"] == DomainStatus.DOWN)
-            timeout_count = sum(1 for d in domains_list if d["status"] == DomainStatus.TIMEOUT)
-            unknown_count = sum(1 for d in domains_list if d["status"] == DomainStatus.UNKNOWN)
-
+            views = self._sort_domain_views(views)
             site_meta = self.site_configs.get(site_id, {})
+            default_domains, sections = self._group_site_domains(site_meta, views)
+            counts = self._count_views(views)
+
             summary = {
                 "id": site_id,
                 "name": site_meta.get("name") or site_id,
                 "description": site_meta.get("description") or "",
                 "health": site_data["health"],
-                "domains": domains_with_timeline,
+                "domains": default_domains,
+                "sections": sections,
                 "bucket_count": site_data["bucket_count"],
                 "last_check": site_data.get("last_check", ""),
-                "domain_count": domain_count,
-                "up_count": up_count,
-                "protected_count": protected_count,
-                "down_count": down_count,
-                "timeout_count": timeout_count,
-                "unknown_count": unknown_count
+                "domain_count": counts["total"],
+                "up_count": counts["up"],
+                "protected_count": counts["protected"],
+                "down_count": counts["down"],
+                "timeout_count": counts["timeout"],
+                "unknown_count": counts["unknown"],
+                "collecting_count": counts["collecting"],
             }
             site_summaries.append(summary)
 
@@ -187,6 +296,7 @@ class Renderer:
 
         # Write using storage backend (returns public URL or path)
         public_url = self.storage.write_file("index.html", html, content_type="text/html")
+        self._write_status_json(site_summaries, aggregated_data["generated_at"])
 
     def _build_site_page(self, site_id: str, site_data: Dict,
                          generated_at: str) -> None:
@@ -204,18 +314,15 @@ class Renderer:
         # Discover available archive dates for this site
         archive_dates = self._get_archive_dates(site_id)
 
-        def build_domains_data(use_relative_paths: bool = False) -> List[Dict]:
-            """Build domain data with appropriate log URLs."""
-            domains = []
+        def build_domain_groups(use_relative_paths: bool = False):
+            """Build flat and grouped domain views with storage-specific log URLs."""
+            views = []
             for domain_id, domain_info in site_data["domains"].items():
                 buckets = site_data["buckets"].get(domain_id, [])
-                timeline = self._buckets_to_timeline(buckets)
-                # domain_id is already the correct identifier (e.g., "example.com")
+                view = self._domain_view(domain_id, domain_info, buckets)
                 domain_name = domain_id
 
                 if use_relative_paths:
-                    # Use relative paths - logs are served from same domain at /logs/
-                    # Note: HTML files are at root, so logs are at ./logs/ not ../logs/
                     from app.models import get_log_filename
                     log_name = get_log_filename(site_id, domain_id)
                     log_path = f"logs/{site_id}/{log_name}.log"
@@ -224,46 +331,21 @@ class Renderer:
                         for month in archive_dates
                     ]
                 else:
-                    # Use absolute URLs from storage backend
                     log_path = self.storage.get_log_public_url(site_id, domain_name)
                     archive_links = [
                         {"date": month, "url": self.storage.get_archive_log_public_url(site_id, domain_name, month)}
                         for month in archive_dates
                     ]
 
-                domains.append({
-                    "id": domain_id,
-                    "status": domain_info["status"],
-                    "url": domain_info["url"],
-                    "link_disabled": domain_info["link_disabled"],
-                    "last_check": domain_info["last_check"],
-                    "timeline": timeline,
-                    "expected": domain_info.get("expected", {}),
-                    "log_path": log_path,
-                    "archive_links": archive_links
-                })
+                view["log_path"] = log_path
+                view["archive_links"] = archive_links
+                views.append(view)
 
-            # Sort domains based on configuration
-            sort_by = self.dashboard_config.get('sort_by', 'yaml_order')
-            if sort_by == 'yaml_order':
-                pass
-            elif sort_by == 'alphabetical':
-                domains.sort(key=lambda d: d["id"])
-            else:
-                def domain_sort_key(d):
-                    status_priority = {
-                        DomainStatus.DOWN: 0,
-                        DomainStatus.TIMEOUT: 1,
-                        DomainStatus.UNKNOWN: 2,
-                        DomainStatus.PROTECTED: 3,
-                        DomainStatus.UP: 4
-                    }.get(d["status"], 5)
-                    return (status_priority, d["id"])
-                domains.sort(key=domain_sort_key)
+            views = self._sort_domain_views(views)
+            default_domains, sections = self._group_site_domains(site_meta, views)
+            return views, default_domains, sections
 
-            return domains
-
-        def render_html(domains: List[Dict]) -> str:
+        def render_html(domains: List[Dict], default_domains: List[Dict], sections: List[Dict]) -> str:
             """Render template with given domain data."""
             return template.render(
                 site_id=site_id,
@@ -271,6 +353,8 @@ class Renderer:
                 site_description=site_description,
                 health=site_data["health"],
                 domains=domains,
+                default_domains=default_domains,
+                sections=sections,
                 generated_at=generated_at,
                 title=f"{site_name} - {self.dashboard_config.get('title', 'FlatMonitor')}",
                 noindex=self.noindex,
@@ -289,15 +373,18 @@ class Renderer:
         if using_multi:
             # Use relative paths for both versions since logs are served from same domain
             # This avoids CORS issues when fetching logs via JavaScript
-            html = render_html(build_domains_data(use_relative_paths=True))
+            domains, default_domains, sections = build_domain_groups(use_relative_paths=True)
+            html = render_html(domains, default_domains, sections)
 
             # Write to both backends
             self.storage.primary.write_file(filename, html, content_type="text/html")
             self.storage.secondary.write_file(filename, html, content_type="text/html")
         else:
             # Single backend - use its native URL format
-            domains = build_domains_data(use_relative_paths=isinstance(self.storage, FilesystemBackend))
-            html = render_html(domains)
+            domains, default_domains, sections = build_domain_groups(
+                use_relative_paths=isinstance(self.storage, FilesystemBackend)
+            )
+            html = render_html(domains, default_domains, sections)
             self.storage.write_file(filename, html, content_type="text/html")
 
     def _get_archive_dates(self, site_id: str) -> List[str]:
