@@ -119,14 +119,20 @@ class FilesystemBackend(StorageBackend):
                     public_site_dir.mkdir(parents=True, exist_ok=True)
                     
                     for log_file in site_dir.glob("*.log"):
-                        dest = public_site_dir / log_file.name
-                        shutil.copy2(log_file, dest)
-                        copied += 1
+                        if self._sync_file(log_file, public_site_dir / log_file.name):
+                            copied += 1
         
         # Copy archive logs
         archive_dir = data_dir / "archive"
+        public_archive_dir = self.output_dir / "logs" / "archive"
+        # Drop public copies of months that Storage.cleanup() removed from
+        # data/archive, so retention_days also bounds the served output.
+        if public_archive_dir.exists():
+            for public_month_dir in public_archive_dir.iterdir():
+                if public_month_dir.is_dir() and not (archive_dir / public_month_dir.name).is_dir():
+                    shutil.rmtree(public_month_dir)
+                    logging.getLogger(__name__).info(f"Pruned public archive: {public_month_dir.name}")
         if archive_dir.exists():
-            public_archive_dir = self.output_dir / "logs" / "archive"
             public_archive_dir.mkdir(parents=True, exist_ok=True)
             
             for month_dir in archive_dir.iterdir():
@@ -140,11 +146,32 @@ class FilesystemBackend(StorageBackend):
                             public_site_dir.mkdir(parents=True, exist_ok=True)
                             
                             for log_file in site_dir.glob("*.log"):
-                                dest = public_site_dir / log_file.name
-                                shutil.copy2(log_file, dest)
-                                copied += 1
+                                if self._sync_file(log_file, public_site_dir / log_file.name):
+                                    copied += 1
         
         return {'uploaded': copied, 'skipped': 0, 'failed': 0, 'total': copied}
+
+    @staticmethod
+    def _sync_file(src: Path, dest: Path) -> bool:
+        """Copy src to dest unless dest already matches (size and mtime).
+
+        upload_logs() runs on every dashboard rebuild, and archived months never
+        change, so re-copying them each time only costs I/O. copy2 preserves mtime,
+        which makes size + mtime a reliable check for these append-only files.
+
+        Returns:
+            True if the file was copied, False if it was already up to date.
+        """
+        src_stat = src.stat()
+        try:
+            dest_stat = dest.stat()
+            if (dest_stat.st_size == src_stat.st_size
+                    and int(dest_stat.st_mtime) == int(src_stat.st_mtime)):
+                return False
+        except FileNotFoundError:
+            pass
+        shutil.copy2(src, dest)
+        return True
 
     def get_log_public_url(self, site_id: str, domain_name: str) -> str:
         """Return relative URL path to log file from site page."""
