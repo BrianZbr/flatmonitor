@@ -256,6 +256,7 @@ class Storage:
     def cleanup(self) -> None:
         """Delete archives older than retention_days."""
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=self.retention_days)
+        removed_months = []
 
         for month_dir in self.archive_dir.iterdir():
             if not month_dir.is_dir():
@@ -270,10 +271,26 @@ class Storage:
                 month_end = dir_date.replace(day=last_day)
                 if month_end < cutoff_date:
                     shutil.rmtree(month_dir)
+                    removed_months.append(month_dir.name)
                     logger.info(f"Cleaned up archive: {month_dir.name}")
             except ValueError:
                 # Not a date-formatted directory, skip
                 continue
+
+        if removed_months:
+            self._remove_from_archive_index(removed_months)
+
+    def _remove_from_archive_index(self, months: List[str]) -> None:
+        """Drop deleted months from the archive index so pages stop linking to them."""
+        index = self.read_archive_index()
+        for site_id in index:
+            index[site_id] = [m for m in index[site_id] if m not in months]
+        try:
+            import json
+            with open(self.get_archive_index_path(), 'w') as f:
+                json.dump(index, f, indent=2)
+        except Exception as e:
+            logger.error(f"Failed to write archive index: {e}")
 
     def get_archive_index_path(self) -> Path:
         """Get path to the archive index file."""

@@ -205,6 +205,32 @@ class TestStorage:
 
         assert not old_archive_dir.exists()
 
+    def test_cleanup_removes_deleted_months_from_archive_index(self, temp_storage):
+        """Months deleted by cleanup must not stay linked from the archive index."""
+        old_month = (datetime.now(timezone.utc) - timedelta(days=60)).strftime("%Y-%m")
+        current_month = datetime.now(timezone.utc).strftime("%Y-%m")
+        for month in (old_month, current_month):
+            (temp_storage.archive_dir / month / "site").mkdir(parents=True)
+            temp_storage.update_archive_index("site", month)
+            temp_storage.update_archive_index("other", month)
+
+        temp_storage.cleanup()
+
+        index = temp_storage.read_archive_index()
+        assert index == {"site": [current_month], "other": [current_month]}
+
+    def test_cleanup_without_removals_leaves_archive_index_alone(self, temp_storage):
+        current_month = datetime.now(timezone.utc).strftime("%Y-%m")
+        (temp_storage.archive_dir / current_month / "site").mkdir(parents=True)
+        temp_storage.update_archive_index("site", current_month)
+        index_path = temp_storage.get_archive_index_path()
+        mtime_before = index_path.stat().st_mtime_ns
+
+        temp_storage.cleanup()
+
+        assert index_path.stat().st_mtime_ns == mtime_before
+        assert temp_storage.read_archive_index() == {"site": [current_month]}
+
     def test_cleanup_keeps_recent_archives(self, temp_storage):
         """Test that recent archives are kept."""
         current_month = datetime.now(timezone.utc).strftime("%Y-%m")

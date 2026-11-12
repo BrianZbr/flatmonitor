@@ -72,6 +72,70 @@ class TestFilesystemBackend:
             # Should not raise
             backend.upload_logs(data_dir)
 
+    @staticmethod
+    def _write_log(path: Path, content: str) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+        return path
+
+    def test_upload_logs_copies_live_and_archive_logs(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir) / "data"
+            out_dir = Path(tmpdir) / "public"
+            self._write_log(data_dir / "live" / "site" / "www.log", "live")
+            self._write_log(data_dir / "archive" / "2024-01" / "site" / "www.log", "archived")
+            backend = FilesystemBackend(str(out_dir))
+
+            result = backend.upload_logs(data_dir)
+
+            assert result["uploaded"] == 2
+            assert (out_dir / "logs" / "site" / "www.log").read_text() == "live"
+            assert (out_dir / "logs" / "archive" / "2024-01" / "site" / "www.log").read_text() == "archived"
+
+    def test_upload_logs_skips_unchanged_files(self):
+        """Archived months never change; rebuilds should not keep re-copying them."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir) / "data"
+            out_dir = Path(tmpdir) / "public"
+            self._write_log(data_dir / "archive" / "2024-01" / "site" / "www.log", "archived")
+            live = self._write_log(data_dir / "live" / "site" / "www.log", "live")
+            backend = FilesystemBackend(str(out_dir))
+            backend.upload_logs(data_dir)
+
+            assert backend.upload_logs(data_dir)["uploaded"] == 0
+
+            live.write_text("live + one more row")
+            os.utime(live, (live.stat().st_atime, live.stat().st_mtime + 5))
+            result = backend.upload_logs(data_dir)
+
+            assert result["uploaded"] == 1
+            assert (out_dir / "logs" / "site" / "www.log").read_text() == "live + one more row"
+
+    def test_upload_logs_prunes_months_removed_from_data(self):
+        """retention_days must bound the public copy, not only data/archive."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir) / "data"
+            out_dir = Path(tmpdir) / "public"
+            self._write_log(data_dir / "archive" / "2024-02" / "site" / "www.log", "kept")
+            stale = self._write_log(out_dir / "logs" / "archive" / "2024-01" / "site" / "www.log", "old")
+            backend = FilesystemBackend(str(out_dir))
+
+            backend.upload_logs(data_dir)
+
+            assert not stale.parent.parent.exists()
+            assert (out_dir / "logs" / "archive" / "2024-02" / "site" / "www.log").exists()
+
+    def test_upload_logs_prunes_all_months_when_archive_dir_gone(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir) / "data"
+            out_dir = Path(tmpdir) / "public"
+            stale = self._write_log(out_dir / "logs" / "archive" / "2024-01" / "site" / "www.log", "old")
+            backend = FilesystemBackend(str(out_dir))
+
+            backend.upload_logs(data_dir)
+
+            assert not stale.exists()
+
 
 @pytest.mark.unit
 class TestMultiStorageBackend:
